@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aqdx-v3-validator"
+version = "0.1.0"
+description = "Local validator for the AQDx Standard Format v3.0"
+readme = "README.md"
+requires-python = "~=3.14.0"
+dependencies = [
+    "pydantic~=2.12.0",
+    "pandas~=3.0.0",
+    "pyarrow~=23.0.0",
+    "openpyxl~=3.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest~=9.0.2",
+    "pyinstaller~=6.19.0"
+]
