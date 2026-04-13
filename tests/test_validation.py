@@ -16,6 +16,7 @@ EXPECTED_RESULTS = [
     ("error_precision.csv", 0, 0, 100),
     ("error_leading_zeros.csv", 0, 0, 55),
     ("error_null_island.csv", 1, 0, 0),
+    ("error_missing_parameter_value_without_validity_code.csv", 1, 0, 0),
 ]
 
 
