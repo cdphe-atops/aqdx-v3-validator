@@ -13,6 +13,7 @@ EXPECTED_RESULTS = [
     ("valid_column_swap.csv", 0, 0, 0),
     ("warn_latlon_swap.csv", 0, 100, 0),
     ("error_precision.csv", 0, 0, 100),
+    ("error_leading_zeros.csv", 0, 0, 55),
     ("error_null_island.csv", 1, 0, 0),
 ]
 
