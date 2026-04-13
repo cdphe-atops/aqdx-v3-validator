@@ -1,3 +1,4 @@
+import glob
 import os
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def test_csv_row_validation(
 # --- 2. Schema-Level Failure Tests ---
 # Format: (filename, expected_missing_substring)
 SCHEMA_FAILURE_CASES = [
-    ("error_required.csv", "parameter_code"),
+    ("error_missing_column.csv", "parameter_code"),
 ]
 
 
@@ -62,11 +63,18 @@ def test_schema_critical_failures(filename, expected_missing_substring):
 
     assert file_path.exists(), f"Test file missing: {file_path}"
 
-    # We use pytest.raises to verify the engine CRASHES intentionally
     with pytest.raises(ValueError) as excinfo:
         process_file(str(file_path))
 
-    # Verify the crash message is helpful and accurate
     error_msg = str(excinfo.value)
     assert "CRITICAL SCHEMA ERROR" in error_msg
     assert expected_missing_substring in error_msg
+
+    base_name = file_path.stem
+    repair_file_pattern = str(TEST_DIR / f".{base_name}*_repair.csv")
+
+    for repair_file in glob.glob(repair_file_pattern):
+        try:
+            os.remove(repair_file)
+        except OSError:
+            pass  # File might already be closed/deleted by the OS
