@@ -11,9 +11,7 @@ from src.validate_aqdx import process_file
 st.set_page_config(page_title="AQDx Validator v3.0", page_icon="✅", layout="wide")
 
 st.title("AQDx Standard Format Validator (v3.0)")
-st.markdown(
-    "Upload your tabular data file to validate it against the strict AQDx v3 schema."
-)
+st.markdown("Upload your tabular data file to validate it against the AQDx v3 schema.")
 st.markdown("---")
 
 # --- File Uploader ---
@@ -45,7 +43,7 @@ if uploaded_file is not None:
             # 2. Render Main Status & Errors
             if not grouped_errors and not grouped_repairs:
                 st.success(
-                    f"✔ **SUCCESS:** All {total_rows} rows perfectly match the AQDx v3 standard!"
+                    f"✔ **SUCCESS:** All {total_rows} rows match the AQDx v3 standard!"
                 )
 
             elif not grouped_errors and grouped_repairs:
@@ -71,7 +69,7 @@ if uploaded_file is not None:
                 ]
                 st.dataframe(
                     pd.DataFrame(error_data).sort_values("Count", ascending=False),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -94,7 +92,7 @@ if uploaded_file is not None:
                 ]
                 st.dataframe(
                     pd.DataFrame(warn_data).sort_values("Count", ascending=False),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -114,7 +112,7 @@ if uploaded_file is not None:
                 ]
                 st.dataframe(
                     pd.DataFrame(repair_data).sort_values("Count", ascending=False),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
