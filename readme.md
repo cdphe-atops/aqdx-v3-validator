@@ -4,6 +4,9 @@ A high-performance, Python-based validation engine designed to ensure tabular ai
 
 This tool is built on **Pydantic** for rigorous type and pattern checking, and uses **Pandas** chunking to process massive datasets (`.csv`, `.xlsx`, `.parquet`) with a minimal memory footprint. It can be run as an interactive Command Line Interface (CLI) or as a user-friendly Streamlit web application.
 
+This application is hosted on streamlit accessible at this link:
+👉 **[https://aqdx-v3-validator.streamlit.app/](https://aqdx-v3-validator.streamlit.app/)**
+
 ## 🚀 Current Status & Features
 
 The core validation engine is fully operational and includes the following features:

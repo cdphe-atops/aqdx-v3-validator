@@ -11,7 +11,9 @@ from src.validate_aqdx import process_file
 st.set_page_config(page_title="AQDx Validator v3.0", page_icon="✅", layout="wide")
 
 st.title("AQDx Standard Format Validator (v3.0)")
-st.markdown("Upload your tabular data file to validate it against the AQDx v3 schema.")
+st.markdown(
+    "Upload your tabular data file to validate it against the [AQDx v3](https://cdphe-atops.github.io/aqdx-documentation/standard-format/field-dictionary/) standard format."
+)
 st.markdown("---")
 
 # --- File Uploader ---
