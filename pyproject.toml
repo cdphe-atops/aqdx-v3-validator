@@ -18,8 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest~=9.0.2",
-    "pyinstaller~=6.19.0"
+    "pytest~=9.0.2"
 ]
 
 [tool.pytest.ini_options]
