@@ -1,0 +1,13 @@
+# =====================================================================
+# STREAMLIT DEPLOYMENT OVERRIDE
+# This project natively uses pyproject.toml and setuptools.
+# This requirements.txt file exists SOLELY to prevent Streamlit
+# Community Cloud from incorrectly assuming this is a Poetry project.
+# Please ensure these versions match the dependencies in pyproject.toml.
+# =====================================================================
+
+streamlit>=1.30.0
+pydantic~=2.12.0
+pandas~=3.0.0
+pyarrow~=23.0.0
+openpyxl~=3.1.0
