@@ -21,31 +21,52 @@ EXPECTED_RESULTS = [
 @pytest.mark.parametrize(
     "filename, expected_errors, expected_warnings, expected_repairs", EXPECTED_RESULTS
 )
-def test_csv_validation(filename, expected_errors, expected_warnings, expected_repairs):
+def test_csv_row_validation(
+    filename, expected_errors, expected_warnings, expected_repairs
+):
+    """Tests that files with valid headers are processed correctly at the row level."""
     file_path = TEST_DIR / filename
 
-    # Ensure the test file actually exists before we try to process it
     assert file_path.exists(), f"Test file missing: {file_path}"
 
-    # Run the core validation engine
+    # Run core engine
     results = process_file(str(file_path))
 
-    # Calculate totals from the returned dictionaries
+    # Aggregate results from dictionaries
     total_errors = sum(len(v) for v in results["errors"].values())
     total_warnings = sum(len(v) for v in results["warnings"].values())
     total_repairs = sum(len(v) for v in results["repairs"].values())
 
-    assert total_errors == expected_errors, (
-        f"Expected {expected_errors} errors, got {total_errors}"
-    )
-    assert total_warnings == expected_warnings, (
-        f"Expected {expected_warnings} warnings, got {total_warnings}"
-    )
-    assert total_repairs == expected_repairs, (
-        f"Expected {expected_repairs} repairs, got {total_repairs}"
-    )
+    # Assertions
+    assert total_errors == expected_errors, f"{filename}: Error mismatch"
+    assert total_warnings == expected_warnings, f"{filename}: Warning mismatch"
+    assert total_repairs == expected_repairs, f"{filename}: Repair mismatch"
 
-    # Clean up the hidden temp repair files so they don't clutter the directory
+    # Cleanup temp repair files
     temp_path = results.get("repaired_file_path")
     if temp_path and os.path.exists(temp_path):
         os.remove(temp_path)
+
+
+# --- 2. Schema-Level Failure Tests ---
+# Format: (filename, expected_missing_substring)
+SCHEMA_FAILURE_CASES = [
+    ("error_required.csv", "parameter_code"),
+]
+
+
+@pytest.mark.parametrize("filename, expected_missing_substring", SCHEMA_FAILURE_CASES)
+def test_schema_critical_failures(filename, expected_missing_substring):
+    """Tests that missing columns trigger a ValueError before row processing begins."""
+    file_path = TEST_DIR / filename
+
+    assert file_path.exists(), f"Test file missing: {file_path}"
+
+    # We use pytest.raises to verify the engine CRASHES intentionally
+    with pytest.raises(ValueError) as excinfo:
+        process_file(str(file_path))
+
+    # Verify the crash message is helpful and accurate
+    error_msg = str(excinfo.value)
+    assert "CRITICAL SCHEMA ERROR" in error_msg
+    assert expected_missing_substring in error_msg
