@@ -215,8 +215,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# notebooks
-notebooks
-
 # pyinstaller binary
 dist
