@@ -1,6 +1,7 @@
 import csv
 import decimal
 import os
+import re
 import sys
 from collections import defaultdict
 from decimal import Decimal
@@ -9,18 +10,21 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field, ValidationError, ValidationInfo, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 # --- Pydantic Model (AQDx v3 Schema) ---
 
 
 class AQDxRecord(BaseModel):
     # 1. Time & Measurement
-    datetime: str = Field(
-        ...,
-        max_length=29,
-        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?[+-]\d{2}:\d{2}$",
-    )
+    datetime: str = Field(..., max_length=29)
     parameter_code: str = Field(..., min_length=1, max_length=5, pattern=r"^\d+$")
     parameter_value: Optional[Decimal] = Field(
         default=None, max_digits=12, decimal_places=5
@@ -124,9 +128,12 @@ class AQDxRecord(BaseModel):
 
             # 6. Datetime standardizing
             if k == "datetime":
-                if " " in val_str:
-                    val_str = val_str.replace(" ", "T")
+                # Only target a space separating YYYY-MM-DD and HH:MM:SS
+                regex_space = r"^(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2}:\d{2})"
+                if re.search(regex_space, val_str):
+                    val_str = re.sub(regex_space, r"\1T\2", val_str)
                     actions.append("Replaced space with 'T' in datetime string")
+
                 if val_str.endswith("Z"):
                     val_str = val_str[:-1] + "+00:00"
                     actions.append("Replaced 'Z' with '+00:00' in datetime string")
@@ -155,6 +162,27 @@ class AQDxRecord(BaseModel):
                         repairs.append((k, action))
 
         return data
+
+    # --- Field-Specific Validations ---
+
+    @field_validator("datetime")
+    @classmethod
+    def check_datetime_format(cls, v: str) -> str:
+        import re
+
+        # 1. Catch the missing timezone offset first to give a helpful error
+        offset_pattern = r"[+-]\d{2}:\d{2}$"
+        if not re.search(offset_pattern, v):
+            raise ValueError("Missing or invalid timezone offset.")
+
+        # 2. Check the full strict AQDx ISO 8601 pattern
+        strict_pattern = (
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?[+-]\d{2}:\d{2}$"
+        )
+        if not re.match(strict_pattern, v):
+            raise ValueError("Invalid datetime format. Expected ISO 8601.")
+
+        return v
 
     # --- Cross-Field Validations ---
 
@@ -285,15 +313,21 @@ def process_file(file_path: str) -> dict:
                         row, context={"warnings": row_warnings, "repairs": row_repairs}
                     )
                 except ValidationError as e:
+                    error_locs = set()  # Track which fields threw a hard error
                     for err in e.errors():
                         loc = err.get("loc", ())
                         error_name = str(loc[0]) if len(loc) > 0 else "Row-Level Error"
+                        error_locs.add(error_name)
+
                         msg = err.get("msg", "Validation error").replace(
                             "Value error, ", ""
                         )
                         grouped_errors[(error_name, msg)].append(row_number)
 
-                # Track warnings and repairs
+                    # Discard any proposed repairs for fields that ultimately failed validation
+                    row_repairs = [r for r in row_repairs if r[0] not in error_locs]
+
+                # Track warnings and remaining valid repairs
                 for warning_name, msg in row_warnings:
                     grouped_warnings[(warning_name, msg)].append(row_number)
                 for field_name, repair_msg in row_repairs:
