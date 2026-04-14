@@ -11,6 +11,7 @@ TEST_DIR = Path(__file__).parent.parent / "test_files"
 # Format: (filename, expected_errors, expected_warnings, expected_repairs)
 EXPECTED_RESULTS = [
     ("valid_example.csv", 0, 0, 0),
+    ("valid_opened_in_excel.xlsx", 0, 0, 55),
     ("valid_column_swap.csv", 0, 0, 0),
     ("warn_latlon_swap.csv", 0, 100, 0),
     ("error_precision.csv", 0, 0, 100),
