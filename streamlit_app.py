@@ -18,12 +18,18 @@ st.markdown("---")
 
 # --- File Uploader ---
 uploaded_file = st.file_uploader(
-    "Choose a file (CSV, XLSX, Parquet)", type=["csv", "xlsx", "parquet"]
+    "Choose a file (CSV, XLSX, Parquet)", type=["csv", "gz", "xlsx", "parquet"]
 )
 
 if uploaded_file is not None:
-    # Streamlit holds files in RAM. We write it to a temp file on the disk
-    # so your Pandas streaming engine can chunk it properly.
+    if uploaded_file.name.lower().endswith(
+        ".gz"
+    ) and not uploaded_file.name.lower().endswith(".csv.gz"):
+        st.error(
+            "✘ **Invalid File Type:** If uploading a compressed file, it must be a `.csv.gz`. Other gzip formats (like .tar.gz or .json.gz) are not supported."
+        )
+        st.stop()
+
     file_ext = os.path.splitext(uploaded_file.name)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
         tmp_file.write(uploaded_file.getvalue())
@@ -38,28 +44,36 @@ if uploaded_file is not None:
             grouped_errors = results["errors"]
             grouped_warnings = results["warnings"]
             grouped_repairs = results["repairs"]
+            missing_headers = results.get("missing_headers", [])
             repaired_path = results["repaired_file_path"]
 
             st.markdown("---")
 
             # 2. Render Main Status & Errors
-            if not grouped_errors and not grouped_repairs:
+            if missing_headers:
+                st.error(
+                    "✘ **SCHEMA FAILURE:** The file is missing required columns. Auto-repairs have been applied to existing columns where possible, but the file remains formally incomplete."
+                )
+                st.error(
+                    "**Missing Columns:**\n"
+                    + "\n".join([f"- `{h}`" for h in missing_headers])
+                )
+            elif not grouped_errors and not grouped_repairs:
                 st.success(
                     f"✔ **SUCCESS:** All {total_rows} rows match the AQDx v3 standard!"
                 )
-
             elif not grouped_errors and grouped_repairs:
                 st.warning(
                     "⚠️ **CONDITIONAL PASS:** The file contained formatting issues, but was fully auto-repaired."
                 )
-
             else:
                 total_errors = sum(len(rows) for rows in grouped_errors.values())
                 st.error(
                     f"✘ **FAILURE:** Found {total_errors} hard error(s) across {total_rows} rows."
                 )
 
-                # Convert error dictionary to DataFrame for Streamlit UI
+            # Render Error Table
+            if grouped_errors:
                 error_data = [
                     {
                         "Error Name": k[0],
@@ -118,24 +132,19 @@ if uploaded_file is not None:
                     hide_index=True,
                 )
 
-                # Offer the repaired file as a download
-                if os.path.exists(repaired_path):
-                    with open(repaired_path, "rb") as f:
-                        st.download_button(
-                            label="⬇️ Download Repaired CSV",
-                            data=f,
-                            file_name=f"{os.path.splitext(uploaded_file.name)[0]}_repair.csv",
-                            mime="text/csv",
-                            type="primary",
-                        )
-
-        except ValueError as ve:
-            # Cleanly catch the critical missing-header errors
-            st.error("✘ **CRITICAL SCHEMA ERROR**")
-            st.code(str(ve))
+            # Offer the repaired file as a download (always available if repair file generated)
+            if os.path.exists(repaired_path):
+                with open(repaired_path, "rb") as f:
+                    st.download_button(
+                        label="⬇️ Download Repaired CSV",
+                        data=f,
+                        file_name=f"{os.path.splitext(uploaded_file.name)[0]}_repair.csv",
+                        mime="text/csv",
+                        type="primary",
+                    )
 
         except Exception as e:
-            # Catch unexpected hard crashes
+            # Catch unexpected hard crashes (the ValueError catch for schema was removed)
             st.error(f"An unexpected critical error occurred: {e}")
 
         finally:

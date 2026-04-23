@@ -1,4 +1,3 @@
-import glob
 import os
 from pathlib import Path
 
@@ -63,23 +62,20 @@ SCHEMA_FAILURE_CASES = [
 
 @pytest.mark.parametrize("filename, expected_missing_substring", SCHEMA_FAILURE_CASES)
 def test_schema_critical_failures(filename, expected_missing_substring):
-    """Tests that missing columns trigger a ValueError before row processing begins."""
+    """Tests that missing columns are flagged in the missing_headers output."""
     file_path = TEST_DIR / filename
 
     assert file_path.exists(), f"Test file missing: {file_path}"
 
-    with pytest.raises(ValueError) as excinfo:
-        process_file(str(file_path))
+    # Engine no longer raises ValueError; it returns the missing columns
+    results = process_file(str(file_path))
 
-    error_msg = str(excinfo.value)
-    assert "CRITICAL SCHEMA ERROR" in error_msg
-    assert expected_missing_substring in error_msg
+    # Check if the expected column is in the missing headers list
+    assert expected_missing_substring in results.get("missing_headers", []), (
+        f"Expected missing column '{expected_missing_substring}' not found in missing_headers."
+    )
 
-    base_name = file_path.stem
-    repair_file_pattern = str(TEST_DIR / f".{base_name}*_repair.csv")
-
-    for repair_file in glob.glob(repair_file_pattern):
-        try:
-            os.remove(repair_file)
-        except OSError:
-            pass  # File might already be closed/deleted by the OS
+    # Cleanup temp repair file
+    temp_path = results.get("repaired_file_path")
+    if temp_path and os.path.exists(temp_path):
+        os.remove(temp_path)

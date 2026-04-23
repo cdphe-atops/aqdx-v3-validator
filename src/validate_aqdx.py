@@ -279,10 +279,12 @@ def process_file(file_path: str) -> dict:
     grouped_errors = defaultdict(list)
     grouped_warnings = defaultdict(list)
     grouped_repairs = defaultdict(list)
+    missing_headers_list = []  # NEW: Track missing headers
     total_rows = 0
     REQUIRED_HEADERS = set(AQDxRecord.model_fields.keys())
 
     csv_writer = None
+    output_headers = []
 
     with open(temp_csv_path, "w", newline="", encoding="utf-8") as temp_file:
         for chunk_idx, records_chunk in enumerate(iter_dataframe_rows(str(path_obj))):
@@ -290,14 +292,10 @@ def process_file(file_path: str) -> dict:
             if chunk_idx == 0 and records_chunk:
                 file_headers = list(records_chunk[0].keys())
                 missing_headers = REQUIRED_HEADERS - set(file_headers)
-                if missing_headers:
-                    missing_list = "\n".join([f" - {h}" for h in missing_headers])
-                    raise ValueError(
-                        f"CRITICAL SCHEMA ERROR: Missing required column headers:\n{missing_list}"
-                    )
+                missing_headers_list = list(missing_headers)
 
-                # Initialize CSV writer with the exact headers from the file
-                csv_writer = csv.DictWriter(temp_file, fieldnames=file_headers)
+                output_headers = file_headers + missing_headers_list
+                csv_writer = csv.DictWriter(temp_file, fieldnames=output_headers)
                 csv_writer.writeheader()
 
             # 2. Row Validation
@@ -313,7 +311,7 @@ def process_file(file_path: str) -> dict:
                         row, context={"warnings": row_warnings, "repairs": row_repairs}
                     )
                 except ValidationError as e:
-                    error_locs = set()  # Track which fields threw a hard error
+                    error_locs = set()
                     for err in e.errors():
                         loc = err.get("loc", ())
                         error_name = str(loc[0]) if len(loc) > 0 else "Row-Level Error"
@@ -324,17 +322,18 @@ def process_file(file_path: str) -> dict:
                         )
                         grouped_errors[(error_name, msg)].append(row_number)
 
-                    # Discard any proposed repairs for fields that ultimately failed validation
                     row_repairs = [r for r in row_repairs if r[0] not in error_locs]
 
-                # Track warnings and remaining valid repairs
                 for warning_name, msg in row_warnings:
                     grouped_warnings[(warning_name, msg)].append(row_number)
                 for field_name, repair_msg in row_repairs:
                     grouped_repairs[(field_name, repair_msg)].append(row_number)
 
-                # Write the fully mutated row to the temp file
-                clean_row = {k: ("" if v is None else v) for k, v in row.items()}
+                clean_row = {}
+                for h in output_headers:
+                    val = row.get(h)
+                    clean_row[h] = "" if val is None else val
+
                 csv_writer.writerow(clean_row)
 
     return {
@@ -342,6 +341,7 @@ def process_file(file_path: str) -> dict:
         "errors": grouped_errors,
         "warnings": grouped_warnings,
         "repairs": grouped_repairs,
+        "missing_headers": missing_headers_list,
         "repaired_file_path": str(temp_csv_path),
     }
 
@@ -380,12 +380,23 @@ def main():
         grouped_repairs = results["repairs"]
         temp_csv_path = Path(results["repaired_file_path"])
 
+        missing_headers = results.get("missing_headers", [])
+
         # --- Output Reports ---
         print("-" * 115)
-        if not grouped_errors and not grouped_repairs:
+        if missing_headers:
+            print(
+                "✘ SCHEMA FAILURE: Missing required column headers (File remains incomplete):"
+            )
+            for h in missing_headers:
+                print(f"   - {h}")
+            print("-" * 115)
+
+        if not grouped_errors and not grouped_repairs and not missing_headers:
             print(
                 f"✔ SUCCESS: All {total_rows} rows perfectly match the AQDx v3 standard!"
             )
+
         elif not grouped_errors and grouped_repairs:
             print(
                 "⚠️ CONDITIONAL PASS: The file contains formatting issues, but can be fully auto-repaired."
