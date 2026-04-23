@@ -279,7 +279,7 @@ def process_file(file_path: str) -> dict:
     grouped_errors = defaultdict(list)
     grouped_warnings = defaultdict(list)
     grouped_repairs = defaultdict(list)
-    missing_headers_list = []  # NEW: Track missing headers
+    missing_headers_list = []
     total_rows = 0
     REQUIRED_HEADERS = set(AQDxRecord.model_fields.keys())
 
@@ -294,6 +294,7 @@ def process_file(file_path: str) -> dict:
                 missing_headers = REQUIRED_HEADERS - set(file_headers)
                 missing_headers_list = list(missing_headers)
 
+                # Initialize CSV writer with original headers + missing required headers
                 output_headers = file_headers + missing_headers_list
                 csv_writer = csv.DictWriter(temp_file, fieldnames=output_headers)
                 csv_writer.writeheader()
@@ -311,7 +312,7 @@ def process_file(file_path: str) -> dict:
                         row, context={"warnings": row_warnings, "repairs": row_repairs}
                     )
                 except ValidationError as e:
-                    error_locs = set()
+                    error_locs = set()  # Track which fields threw a hard error
                     for err in e.errors():
                         loc = err.get("loc", ())
                         error_name = str(loc[0]) if len(loc) > 0 else "Row-Level Error"
@@ -322,13 +323,16 @@ def process_file(file_path: str) -> dict:
                         )
                         grouped_errors[(error_name, msg)].append(row_number)
 
+                    # Discard any proposed repairs for fields that ultimately failed validation
                     row_repairs = [r for r in row_repairs if r[0] not in error_locs]
 
+                # Track warnings and remaining valid repairs
                 for warning_name, msg in row_warnings:
                     grouped_warnings[(warning_name, msg)].append(row_number)
                 for field_name, repair_msg in row_repairs:
                     grouped_repairs[(field_name, repair_msg)].append(row_number)
 
+                # Write row dynamically, padding missing columns with empty strings
                 clean_row = {}
                 for h in output_headers:
                     val = row.get(h)
@@ -378,9 +382,8 @@ def main():
         grouped_errors = results["errors"]
         grouped_warnings = results["warnings"]
         grouped_repairs = results["repairs"]
-        temp_csv_path = Path(results["repaired_file_path"])
-
         missing_headers = results.get("missing_headers", [])
+        temp_csv_path = Path(results["repaired_file_path"])
 
         # --- Output Reports ---
         print("-" * 115)
@@ -396,12 +399,11 @@ def main():
             print(
                 f"✔ SUCCESS: All {total_rows} rows perfectly match the AQDx v3 standard!"
             )
-
-        elif not grouped_errors and grouped_repairs:
+        elif not grouped_errors and grouped_repairs and not missing_headers:
             print(
                 "⚠️ CONDITIONAL PASS: The file contains formatting issues, but can be fully auto-repaired."
             )
-        else:
+        elif grouped_errors:
             total_error_instances = sum(len(rows) for rows in grouped_errors.values())
             print(
                 f"✘ FAILURE: Found {total_error_instances} hard error(s) across {total_rows} rows."
@@ -464,17 +466,16 @@ def main():
                 short_msg = (msg[:57] + "...") if len(msg) > 60 else msg
                 print(f"{field:<20} | {count:<7} | {short_msg:<60} | {first_row}")
 
-    except ValueError as ve:
-        # Catch specific header errors cleanly
-        print(f"\n{ve}")
     except Exception as e:
         print(f"\nCRITICAL UNHANDLED ERROR: {e}")
     finally:
         # --- User Prompt for Repairs & Cleanup ---
-        if "grouped_repairs" in locals() and grouped_repairs:
+        if ("grouped_repairs" in locals() and grouped_repairs) or (
+            "missing_headers" in locals() and missing_headers
+        ):
             print("\n" + "-" * 115)
             user_input = input(
-                f"Press 'R' to accept proposed repairs and save as {repaired_csv_path.name}, or press Enter to exit... "
+                f"Press 'R' to accept proposed repairs/schema-padding and save as {repaired_csv_path.name}, or press Enter to exit... "
             )
             if (
                 user_input.strip().lower() == "r"
