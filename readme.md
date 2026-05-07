@@ -1,29 +1,36 @@
-# AQDx v3 Validator
+# AQDx v3 Data Validator
 
-A high-performance, Python-based validation engine designed to ensure tabular air quality data strictly adheres to the AQDx v3.0 schema.
+This application is publically hosted on streamlit accessible at this link:
+**[https://aqdx-v3-validator.streamlit.app/](https://aqdx-v3-validator.streamlit.app/)**
 
-This tool is built on **Pydantic** for rigorous type and pattern checking, and uses **Pandas** chunking to process massive datasets (`.csv`, `.xlsx`, `.parquet`) with a minimal memory footprint. It can be run as an interactive Command Line Interface (CLI) or as a user-friendly Streamlit web application.
+This repository contains a Python-based validation engine designed to verify that air quality datasets adhere to the **[AQDx v3.0 Standard Format](https://cdphe-atops.github.io/aqdx-documentation)**. It provides government agencies, community groups, and other data stewards with a tool to enforce schema integrity, coordinate logic, and data compliance before data ingestion.
 
-This application is hosted on streamlit accessible at this link:
-👉 **[https://aqdx-v3-validator.streamlit.app/](https://aqdx-v3-validator.streamlit.app/)**
+## Overview
 
-## 🚀 Current Status & Features
+The engine uses **Pydantic** to define and enforce validation rules. This approach provides a portable, machine-readable schema definition that can be reused in other Python-based data pipelines or applications requiring AQDx v3.0 compliance.
 
-The core validation engine is fully operational and includes the following features:
+The tool identifies structural errors, provides logical warnings, and can automatically generate a "repaired" version of data for common formatting inconsistencies.
 
-- **Memory-Efficient Processing:** Streams data in chunks, allowing it to validate datasets with hundreds of thousands of rows without crashing.
-- **Strict Schema Enforcement:** Validates ISO 8601 datetimes, precision limits, forbidden null placeholders, and code patterns based on the AQDx v3.0 field dictionary.
-- **Cross-Field Logic:** Distinguishes between hard Errors (e.g., Null Island coordinates) and Warnings (e.g., swapped Lat/Lon coordinates or missing qualification codes).
-- **Auto-Repair Engine:** Safely pre-processes and mutates recoverable formatting issues (e.g., stripping commas, rounding precision floats, standardizing quotes, zero-padding codes) and offers a cleaned `_repair.csv` file for download.
+### Core Validation Logic
+
+- **Schema Enforcement:** Verifies all required fields (e.g., `parameter_code`, `unit_code`, `validity_code`) against defined lengths and regex patterns.
+- **Datetime Standardization:** Strictly enforces ISO 8601 formats including mandatory timezone offsets.
+- **Geospatial Checks:** Detects "Null Island" coordinates (0, 0) and provides warnings for values outside expected U.S. bounding boxes (potential Lat/Lon swaps).
+- **Quality Logic:** Ensures cross-field consistency, such as requiring specific `validity_codes` when `parameter_values` are null.
+- **Auto-Repair Engine:** Standardizes common formatting artifacts including:
+  - Stripping float artifacts from integer codes (e.g., `45202.0` -> `45202`).
+  - Applying zero-padding to codes (e.g., `unit_code` `7` -> `007`).
+  - Standardizing "smart quotes" and whitespace.
+  - Rounding decimals to the maximum allowed scale for the AQDx schema.
 
 ---
 
-## 🛠️ Installation
+## Installation
 
 ### 1. Clone the Repository
 
 ```bash
-git clone [https://github.com/yourusername/aqdx-v3-validator.git](https://github.com/yourusername/aqdx-v3-validator.git)
+git clone [https://github.com/cdphe-atops/aqdx-v3-validator.git](https://github.com/cdphe-atops/aqdx-v3-validator.git)
 cd aqdx-v3-validator
 ```
 
@@ -58,7 +65,7 @@ The easiest way to validate files is using the included Streamlit frontend. It p
 To launch the web app locally:
 
 ```bash
-streamlit run app.py
+streamlit run streamlit_app.py
 ```
 
 - The app will automatically open in your default browser.
