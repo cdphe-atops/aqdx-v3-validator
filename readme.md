@@ -30,7 +30,7 @@ The tool identifies structural errors, provides logical warnings, and can automa
 ### 1. Clone the Repository
 
 ```bash
-git clone [https://github.com/cdphe-atops/aqdx-v3-validator.git](https://github.com/cdphe-atops/aqdx-v3-validator.git)
+git clone https://github.com/cdphe-atops/aqdx-v3-validator.git
 cd aqdx-v3-validator
 ```
 
