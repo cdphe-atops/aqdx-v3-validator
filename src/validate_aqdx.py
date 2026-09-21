@@ -24,7 +24,7 @@ from pydantic import (
 
 class AQDxRecord(BaseModel):
     # 1. Time & Measurement
-    datetime: str = Field(..., max_length=29)
+    sample_datetime: str = Field(..., max_length=29)
     parameter_code: str = Field(..., min_length=1, max_length=5, pattern=r"^\d+$")
     parameter_value: Optional[Decimal] = Field(
         default=None, max_digits=12, decimal_places=5
@@ -33,7 +33,7 @@ class AQDxRecord(BaseModel):
     method_code: Optional[str] = Field(
         default=None, min_length=1, max_length=3, pattern=r"^\d+$"
     )
-    duration: Decimal = Field(..., max_digits=12, decimal_places=3)
+    sample_duration: Decimal = Field(..., max_digits=12, decimal_places=3)
     aggregation_code: int = Field(...)
 
     # 2. Location
@@ -74,7 +74,7 @@ class AQDxRecord(BaseModel):
         codes = {"parameter_code": 5, "unit_code": 3, "method_code": 3}
         decimals = {
             "parameter_value": 5,
-            "duration": 3,
+            "sample_duration": 3,
             "latitude": 5,
             "longitude": 5,
             "elevation": 2,
@@ -126,17 +126,19 @@ class AQDxRecord(BaseModel):
                 val_str = val_str.replace(",", "")
                 actions.append("Removed thousands separators (commas)")
 
-            # 6. Datetime standardizing
-            if k == "datetime":
+            # 6. sample_datetime standardizing
+            if k == "sample_datetime":
                 # Only target a space separating YYYY-MM-DD and HH:MM:SS
                 regex_space = r"^(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2}:\d{2})"
                 if re.search(regex_space, val_str):
                     val_str = re.sub(regex_space, r"\1T\2", val_str)
-                    actions.append("Replaced space with 'T' in datetime string")
+                    actions.append("Replaced space with 'T' in sample_datetime string")
 
                 if val_str.endswith("Z"):
                     val_str = val_str[:-1] + "+00:00"
-                    actions.append("Replaced 'Z' with '+00:00' in datetime string")
+                    actions.append(
+                        "Replaced 'Z' with '+00:00' in sample_datetime string"
+                    )
 
             # 7. Rounding Decimals
             if k in decimals and val_str:
@@ -165,7 +167,7 @@ class AQDxRecord(BaseModel):
 
     # --- Field-Specific Validations ---
 
-    @field_validator("datetime")
+    @field_validator("sample_datetime")
     @classmethod
     def check_datetime_format(cls, v: str) -> str:
         import re
@@ -180,7 +182,7 @@ class AQDxRecord(BaseModel):
             r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?[+-]\d{2}:\d{2}$"
         )
         if not re.match(strict_pattern, v):
-            raise ValueError("Invalid datetime format. Expected ISO 8601.")
+            raise ValueError("Invalid sample_datetime format. Expected ISO 8601.")
 
         return v
 

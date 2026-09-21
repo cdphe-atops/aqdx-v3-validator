@@ -1,4 +1,4 @@
-datetime,parameter_code,parameter_value,unit_code,method_code,duration,aggregation_code,latitude,longitude,elevation,data_steward_name,device_id,measurement_technology_code,instrument_classification,dataset_id,validity_code,calibration_code,review_level_code,detection_limit,qualifier_codes
+sample_datetime,parameter_code,parameter_value,unit_code,method_code,sample_duration,aggregation_code,latitude,longitude,elevation,data_steward_name,device_id,measurement_technology_code,instrument_classification,dataset_id,validity_code,calibration_code,review_level_code,detection_limit,qualifier_codes
 2024-06-05T14:40:30Z,45202,12.86362,142,805,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T14:40:33Z,61102,90.76825,139,200,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T14:40:34Z,42601,32.27931,047,442,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
