@@ -242,23 +242,31 @@ class AQDxRecord(BaseModel):
 # --- File Processing & Execution ---
 
 
-def iter_dataframe_rows(filepath: str, chunksize: int = 50000):
-    ext = Path(filepath).suffix.lower()
+def iter_dataframe_rows(file_input: Any, chunksize: int = 50000):
+    # Dynamically extract extension from a string/Path or a file-like object
+    if isinstance(file_input, (str, Path)):
+        ext = Path(file_input).suffix.lower()
+    elif hasattr(file_input, "name"):
+        ext = Path(file_input.name).suffix.lower()
+    else:
+        raise ValueError(
+            "Input must be a path string, Path object, or file-like object with a 'name' attribute."
+        )
 
     if ext in [".csv", ".gz"]:
-        for chunk in pd.read_csv(filepath, chunksize=chunksize, dtype=str):
+        for chunk in pd.read_csv(file_input, chunksize=chunksize, dtype=str):
             chunk.replace({"nan": None, np.nan: None}, inplace=True)
             yield chunk.to_dict(orient="records")
 
     elif ext in [".xlsx", ".xls", ".ods"]:
-        df = pd.read_excel(filepath, sheet_name=0, dtype=str)
+        df = pd.read_excel(file_input, sheet_name=0, dtype=str)
         df.replace({"nan": None, np.nan: None}, inplace=True)
         records = df.to_dict(orient="records")
         for i in range(0, len(records), chunksize):
             yield records[i : i + chunksize]
 
     elif ext == ".parquet":
-        df = pd.read_parquet(filepath)
+        df = pd.read_parquet(file_input)
         df = df.astype(str)
         df.replace({"nan": None, "None": None, "<NA>": None}, inplace=True)
         records = df.to_dict(orient="records")
@@ -268,13 +276,11 @@ def iter_dataframe_rows(filepath: str, chunksize: int = 50000):
         raise ValueError(f"Unsupported file extension: {ext}")
 
 
-def process_file(file_path: str) -> dict:
+def process_file(file_input: Any) -> dict:
     """
-    Core validation engine. Takes a file path, runs Pydantic validation,
+    Core validation engine. Takes a file path or file-like object, runs Pydantic validation,
     and returns dictionaries of the results along with an in-memory DataFrame.
     """
-    path_obj = Path(file_path)
-
     grouped_errors = defaultdict(list)
     grouped_warnings = defaultdict(list)
     grouped_repairs = defaultdict(list)
@@ -285,7 +291,7 @@ def process_file(file_path: str) -> dict:
     output_headers = []
     cleaned_records = []  # Accumulate rows in memory instead of writing to disk
 
-    for chunk_idx, records_chunk in enumerate(iter_dataframe_rows(str(path_obj))):
+    for chunk_idx, records_chunk in enumerate(iter_dataframe_rows(file_input)):
         # 1. Header Validation (Run once)
         if chunk_idx == 0 and records_chunk:
             file_headers = list(records_chunk[0].keys())
