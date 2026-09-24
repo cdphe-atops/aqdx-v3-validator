@@ -1,6 +1,4 @@
-import csv
 import decimal
-import os
 import re
 import sys
 from collections import defaultdict
@@ -273,10 +271,9 @@ def iter_dataframe_rows(filepath: str, chunksize: int = 50000):
 def process_file(file_path: str) -> dict:
     """
     Core validation engine. Takes a file path, runs Pydantic validation,
-    and returns dictionaries of the results.
+    and returns dictionaries of the results along with an in-memory DataFrame.
     """
     path_obj = Path(file_path)
-    temp_csv_path = path_obj.with_name(f".{path_obj.stem}_temp_repair.csv")
 
     grouped_errors = defaultdict(list)
     grouped_warnings = defaultdict(list)
@@ -285,62 +282,63 @@ def process_file(file_path: str) -> dict:
     total_rows = 0
     REQUIRED_HEADERS = set(AQDxRecord.model_fields.keys())
 
-    csv_writer = None
     output_headers = []
+    cleaned_records = []  # Accumulate rows in memory instead of writing to disk
 
-    with open(temp_csv_path, "w", newline="", encoding="utf-8") as temp_file:
-        for chunk_idx, records_chunk in enumerate(iter_dataframe_rows(str(path_obj))):
-            # 1. Header Validation (Run once)
-            if chunk_idx == 0 and records_chunk:
-                file_headers = list(records_chunk[0].keys())
-                missing_headers = REQUIRED_HEADERS - set(file_headers)
-                missing_headers_list = list(missing_headers)
+    for chunk_idx, records_chunk in enumerate(iter_dataframe_rows(str(path_obj))):
+        # 1. Header Validation (Run once)
+        if chunk_idx == 0 and records_chunk:
+            file_headers = list(records_chunk[0].keys())
+            missing_headers = REQUIRED_HEADERS - set(file_headers)
+            missing_headers_list = list(missing_headers)
 
-                # Initialize CSV writer with original headers + missing required headers
-                output_headers = file_headers + missing_headers_list
-                csv_writer = csv.DictWriter(temp_file, fieldnames=output_headers)
-                csv_writer.writeheader()
+            # Define headers for the output
+            output_headers = file_headers + missing_headers_list
 
-            # 2. Row Validation
-            for row in records_chunk:
-                row_number = total_rows + 2
-                total_rows += 1
+        # 2. Row Validation
+        for row in records_chunk:
+            row_number = total_rows + 2
+            total_rows += 1
 
-                row_warnings = []
-                row_repairs = []
+            row_warnings = []
+            row_repairs = []
 
-                try:
-                    AQDxRecord.model_validate(
-                        row, context={"warnings": row_warnings, "repairs": row_repairs}
+            try:
+                AQDxRecord.model_validate(
+                    row, context={"warnings": row_warnings, "repairs": row_repairs}
+                )
+            except ValidationError as e:
+                error_locs = set()  # Track which fields threw a hard error
+                for err in e.errors():
+                    loc = err.get("loc", ())
+                    error_name = str(loc[0]) if len(loc) > 0 else "Row-Level Error"
+                    error_locs.add(error_name)
+
+                    msg = err.get("msg", "Validation error").replace(
+                        "Value error, ", ""
                     )
-                except ValidationError as e:
-                    error_locs = set()  # Track which fields threw a hard error
-                    for err in e.errors():
-                        loc = err.get("loc", ())
-                        error_name = str(loc[0]) if len(loc) > 0 else "Row-Level Error"
-                        error_locs.add(error_name)
+                    grouped_errors[(error_name, msg)].append(row_number)
 
-                        msg = err.get("msg", "Validation error").replace(
-                            "Value error, ", ""
-                        )
-                        grouped_errors[(error_name, msg)].append(row_number)
+                # Discard any proposed repairs for fields that ultimately failed validation
+                row_repairs = [r for r in row_repairs if r[0] not in error_locs]
 
-                    # Discard any proposed repairs for fields that ultimately failed validation
-                    row_repairs = [r for r in row_repairs if r[0] not in error_locs]
+            # Track warnings and remaining valid repairs
+            for warning_name, msg in row_warnings:
+                grouped_warnings[(warning_name, msg)].append(row_number)
+            for field_name, repair_msg in row_repairs:
+                grouped_repairs[(field_name, repair_msg)].append(row_number)
 
-                # Track warnings and remaining valid repairs
-                for warning_name, msg in row_warnings:
-                    grouped_warnings[(warning_name, msg)].append(row_number)
-                for field_name, repair_msg in row_repairs:
-                    grouped_repairs[(field_name, repair_msg)].append(row_number)
+            # Build row dynamically, padding missing columns with empty strings
+            clean_row = {}
+            for h in output_headers:
+                val = row.get(h)
+                clean_row[h] = "" if val is None else val
 
-                # Write row dynamically, padding missing columns with empty strings
-                clean_row = {}
-                for h in output_headers:
-                    val = row.get(h)
-                    clean_row[h] = "" if val is None else val
+            # Append to our in-memory list
+            cleaned_records.append(clean_row)
 
-                csv_writer.writerow(clean_row)
+    # Convert the accumulated list of dictionaries to a Pandas DataFrame
+    repaired_df = pd.DataFrame(cleaned_records)
 
     return {
         "total_rows": total_rows,
@@ -348,7 +346,7 @@ def process_file(file_path: str) -> dict:
         "warnings": grouped_warnings,
         "repairs": grouped_repairs,
         "missing_headers": missing_headers_list,
-        "repaired_file_path": str(temp_csv_path),
+        "repaired_dataframe": repaired_df,  # Return DataFrame instead of file path
     }
 
 
@@ -375,7 +373,6 @@ def main():
     print("Processing (this may take a moment for large files)...\n")
 
     repaired_csv_path = path_obj.with_name(f"{path_obj.stem}_repair.csv")
-    temp_csv_path = None
 
     try:
         results = process_file(str(path_obj))
@@ -385,7 +382,7 @@ def main():
         grouped_warnings = results["warnings"]
         grouped_repairs = results["repairs"]
         missing_headers = results.get("missing_headers", [])
-        temp_csv_path = Path(results["repaired_file_path"])
+        repaired_df = results.get("repaired_dataframe")
 
         # --- Output Reports ---
         print("-" * 115)
@@ -479,21 +476,9 @@ def main():
             user_input = input(
                 f"Press 'R' to accept proposed repairs/schema-padding and save as {repaired_csv_path.name}, or press Enter to exit... "
             )
-            if (
-                user_input.strip().lower() == "r"
-                and temp_csv_path
-                and temp_csv_path.exists()
-            ):
-                if repaired_csv_path.exists():
-                    os.remove(repaired_csv_path)
-                os.rename(temp_csv_path, repaired_csv_path)
+            if user_input.strip().lower() == "r" and repaired_df is not None:
+                repaired_df.to_csv(repaired_csv_path, index=False)
                 print(f"\n✔ Successfully saved repaired file to: {repaired_csv_path}")
-            else:
-                if temp_csv_path and temp_csv_path.exists():
-                    os.remove(temp_csv_path)
-        else:
-            if temp_csv_path and temp_csv_path.exists():
-                os.remove(temp_csv_path)
 
         input("\nPress Enter to close...")
 

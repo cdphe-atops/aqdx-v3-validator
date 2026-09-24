@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -47,11 +46,6 @@ def test_csv_row_validation(
     assert total_warnings == expected_warnings, f"{filename}: Warning mismatch"
     assert total_repairs == expected_repairs, f"{filename}: Repair mismatch"
 
-    # Cleanup temp repair files
-    temp_path = results.get("repaired_file_path")
-    if temp_path and os.path.exists(temp_path):
-        os.remove(temp_path)
-
 
 # --- 2. Schema-Level Failure Tests ---
 # Format: (filename, expected_missing_substring)
@@ -74,8 +68,3 @@ def test_schema_critical_failures(filename, expected_missing_substring):
     assert expected_missing_substring in results.get("missing_headers", []), (
         f"Expected missing column '{expected_missing_substring}' not found in missing_headers."
     )
-
-    # Cleanup temp repair file
-    temp_path = results.get("repaired_file_path")
-    if temp_path and os.path.exists(temp_path):
-        os.remove(temp_path)
