@@ -45,6 +45,8 @@ if uploaded_file is not None:
 
             st.markdown("---")
 
+            is_conditional_pass = False
+
             if missing_headers:
                 st.error(
                     "✘ **SCHEMA FAILURE:** The file is missing required columns. Auto-repairs have been applied to existing columns where possible, but the file remains formally incomplete."
@@ -58,6 +60,7 @@ if uploaded_file is not None:
                     f"✔ **SUCCESS:** All {total_rows} rows match the AQDx v3 standard!"
                 )
             elif not grouped_errors and grouped_repairs:
+                is_conditional_pass = True
                 st.warning(
                     "⚠️ **CONDITIONAL PASS:** The file contained formatting issues, but was fully auto-repaired."
                 )
@@ -124,8 +127,12 @@ if uploaded_file is not None:
                     hide_index=True,
                 )
 
-            # Offer the repaired file as a download
-            if repaired_df is not None and not repaired_df.empty:
+            # Offer the repaired file as a download only on conditional pass
+            if (
+                is_conditional_pass
+                and repaired_df is not None
+                and not repaired_df.empty
+            ):
                 csv_data = repaired_df.to_csv(index=False).encode("utf-8")
                 st.download_button(
                     label="⬇️ Download Repaired CSV",
