@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 from pydantic import (
     BaseModel,
     Field,
@@ -16,6 +17,57 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+DEFAULT_MAX_ERROR_THRESHOLD = 5000
+
+
+class IssueTracker:
+    """Lightweight metadata tracker storing only issue count and first affected row.
+
+    Maintains backwards compatibility with code expecting list-like len() and [0]
+    access while avoiding storing hundreds of thousands of integers in memory.
+    """
+
+    __slots__ = ("count", "first_row")
+
+    def __init__(self, first_row: Optional[int] = None):
+        self.count = 0 if first_row is None else 1
+        self.first_row = first_row
+
+    def append(self, row_number: int) -> None:
+        if self.first_row is None:
+            self.first_row = row_number
+        self.count += 1
+
+    def __len__(self) -> int:
+        return self.count
+
+    def __getitem__(self, idx: Any) -> Any:
+        if idx == 0 and self.count > 0:
+            return self.first_row
+        if idx == "count":
+            return self.count
+        if idx == "first_row":
+            return self.first_row
+        raise IndexError("IssueTracker only stores first_row at index 0.")
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key == "count":
+            return self.count
+        if key == "first_row":
+            return self.first_row
+        return default
+
+    def __bool__(self) -> bool:
+        return self.count > 0
+
+    def __iter__(self):
+        if self.count > 0:
+            yield self.first_row
+
+    def __repr__(self) -> str:
+        return f"IssueTracker(count={self.count}, first_row={self.first_row})"
+
 
 # --- Pydantic Model (AQDx v3 Schema) ---
 
@@ -243,7 +295,6 @@ class AQDxRecord(BaseModel):
 
 
 def iter_dataframe_rows(file_input: Any, chunksize: int = 50000):
-    # Dynamically extract extension from a string/Path or a file-like object
     if isinstance(file_input, (str, Path)):
         ext = Path(file_input).suffix.lower()
     elif hasattr(file_input, "name"):
@@ -266,39 +317,43 @@ def iter_dataframe_rows(file_input: Any, chunksize: int = 50000):
             yield records[i : i + chunksize]
 
     elif ext == ".parquet":
-        df = pd.read_parquet(file_input)
-        df = df.astype(str)
-        df.replace({"nan": None, "None": None, "<NA>": None}, inplace=True)
-        records = df.to_dict(orient="records")
-        for i in range(0, len(records), chunksize):
-            yield records[i : i + chunksize]
+        pf = pq.ParquetFile(file_input)
+        for batch in pf.iter_batches(batch_size=chunksize):
+            chunk = batch.to_pandas().astype(str)
+            chunk.replace({"nan": None, "None": None, "<NA>": None}, inplace=True)
+            yield chunk.to_dict(orient="records")
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
 
-def process_file(file_input: Any) -> dict:
+def process_file(
+    file_input: Any,
+    max_errors: Optional[int] = DEFAULT_MAX_ERROR_THRESHOLD,
+) -> dict:
+    """Core validation engine. Takes a file path or file-like object, runs Pydantic validation,
+
+    and returns metadata summaries along with an in-memory DataFrame.
     """
-    Core validation engine. Takes a file path or file-like object, runs Pydantic validation,
-    and returns dictionaries of the results along with an in-memory DataFrame.
-    """
-    grouped_errors = defaultdict(list)
-    grouped_warnings = defaultdict(list)
-    grouped_repairs = defaultdict(list)
+    grouped_errors = defaultdict(IssueTracker)
+    grouped_warnings = defaultdict(IssueTracker)
+    grouped_repairs = defaultdict(IssueTracker)
     missing_headers_list = []
     total_rows = 0
+    total_error_count = 0
+    aborted = False
     REQUIRED_HEADERS = set(AQDxRecord.model_fields.keys())
 
     output_headers = []
-    cleaned_records = []  # Accumulate rows in memory instead of writing to disk
+    cleaned_dfs = []
 
     for chunk_idx, records_chunk in enumerate(iter_dataframe_rows(file_input)):
+        chunk_clean_rows = []
+
         # 1. Header Validation (Run once)
         if chunk_idx == 0 and records_chunk:
             file_headers = list(records_chunk[0].keys())
             missing_headers = REQUIRED_HEADERS - set(file_headers)
             missing_headers_list = list(missing_headers)
-
-            # Define headers for the output
             output_headers = file_headers + missing_headers_list
 
         # 2. Row Validation
@@ -314,7 +369,7 @@ def process_file(file_input: Any) -> dict:
                     row, context={"warnings": row_warnings, "repairs": row_repairs}
                 )
             except ValidationError as e:
-                error_locs = set()  # Track which fields threw a hard error
+                error_locs = set()
                 for err in e.errors():
                     loc = err.get("loc", ())
                     error_name = str(loc[0]) if len(loc) > 0 else "Row-Level Error"
@@ -324,27 +379,50 @@ def process_file(file_input: Any) -> dict:
                         "Value error, ", ""
                     )
                     grouped_errors[(error_name, msg)].append(row_number)
+                    total_error_count += 1
 
-                # Discard any proposed repairs for fields that ultimately failed validation
+                # Discard proposed repairs for fields that ultimately failed validation
                 row_repairs = [r for r in row_repairs if r[0] not in error_locs]
 
-            # Track warnings and remaining valid repairs
+                # Fast-Fail Threshold Check
+                if max_errors is not None and total_error_count >= max_errors:
+                    grouped_errors[
+                        (
+                            "Validation Aborted",
+                            f"Exceeded maximum error limit ({max_errors}). Aborting early to protect memory and CPU.",
+                        )
+                    ].append(row_number)
+                    aborted = True
+                    break
+
+            # Track warnings and valid repairs
             for warning_name, msg in row_warnings:
                 grouped_warnings[(warning_name, msg)].append(row_number)
             for field_name, repair_msg in row_repairs:
                 grouped_repairs[(field_name, repair_msg)].append(row_number)
 
-            # Build row dynamically, padding missing columns with empty strings
             clean_row = {}
             for h in output_headers:
                 val = row.get(h)
-                clean_row[h] = "" if val is None else val
+                clean_row[h] = (
+                    None
+                    if (val is None or str(val).strip() in ("", "nan", "None", "<NA>"))
+                    else val
+                )
+            chunk_clean_rows.append(clean_row)
 
-            # Append to our in-memory list
-            cleaned_records.append(clean_row)
+        if chunk_clean_rows:
+            cleaned_dfs.append(pd.DataFrame(chunk_clean_rows))
 
-    # Convert the accumulated list of dictionaries to a Pandas DataFrame
-    repaired_df = pd.DataFrame(cleaned_records)
+        if aborted:
+            break
+
+    # Combine chunk DataFrames into a single contiguous DataFrame
+    repaired_df = (
+        pd.concat(cleaned_dfs, ignore_index=True)
+        if cleaned_dfs
+        else pd.DataFrame(columns=output_headers)
+    )
 
     return {
         "total_rows": total_rows,
@@ -352,7 +430,7 @@ def process_file(file_input: Any) -> dict:
         "warnings": grouped_warnings,
         "repairs": grouped_repairs,
         "missing_headers": missing_headers_list,
-        "repaired_dataframe": repaired_df,  # Return DataFrame instead of file path
+        "repaired_dataframe": repaired_df,
     }
 
 
@@ -474,7 +552,6 @@ def main():
     except Exception as e:
         print(f"\nCRITICAL UNHANDLED ERROR: {e}")
     finally:
-        # --- User Prompt for Repairs & Cleanup ---
         if ("grouped_repairs" in locals() and grouped_repairs) or (
             "missing_headers" in locals() and missing_headers
         ):
