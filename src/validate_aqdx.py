@@ -97,7 +97,7 @@ class AQDxRecord(BaseModel):
     measurement_technology_code: str = Field(
         ...,
         max_length=14,
-        pattern=r"^[A-Z]{2}[a-z]{0,2}-[A-Z]{2}[a-z]{0,2}-[A-Z]{2}[a-z]{0,2}$",
+        pattern=r"^[A-Z]{2}[a-z]{0,2}-(?:[A-Z]{2}[a-z]{0,2}|00)-[A-Z]{2}[a-z]{0,2}$",
     )
     instrument_classification: int = Field(..., ge=1, le=3)
     dataset_id: str = Field(..., max_length=128, pattern=r"^[\w.-]+$")
