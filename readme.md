@@ -1,13 +1,13 @@
 # AQDx v3 Data Validator
 
-This application is publically hosted on streamlit accessible at this link:
+This application is publicly hosted on Streamlit, accessible at this link:
 **[https://aqdx-v3-validator.streamlit.app/](https://aqdx-v3-validator.streamlit.app/)**
 
 This repository contains a Python-based validation engine designed to verify that air quality datasets adhere to the **[AQDx v3.0 Standard Format](https://cdphe-atops.github.io/aqdx-documentation)**. It provides government agencies, community groups, and other data stewards with a tool to enforce schema integrity, coordinate logic, and data compliance before data ingestion.
 
 ## Overview
 
-The engine uses **Pydantic** to define and enforce validation rules. This approach provides a portable, machine-readable schema definition that can be reused in other Python-based data pipelines or applications requiring AQDx v3.0 compliance.
+The engine uses **Pydantic** to define and enforce validation rules. This approach provides a portable, machine-readable schema definition that can be reused in other Python-based data pipelines or run as a standalone CLI/Web application.
 
 The tool identifies structural errors, provides logical warnings, and can automatically generate a "repaired" version of data for common formatting inconsistencies.
 
@@ -25,52 +25,44 @@ The tool identifies structural errors, provides logical warnings, and can automa
 
 ---
 
-## Installation
+## 📦 Usage: Integrating as a Library
 
-### 1. Clone the Repository
+Because this repository is configured as a standard Python package, you can consume its validation engine directly in other applications without copying the source code.
 
-```bash
-git clone https://github.com/cdphe-atops/aqdx-v3-validator.git
-cd aqdx-v3-validator
+Currently, this package is distributed via GitHub tags rather than PyPI.
+
+### Installing with Pixi (Recommended)
+
+If you are using Pixi, add the package directly to your `pixi.toml` under PyPI dependencies, pointing to a specific release tag:
+
+```toml
+[pypi-dependencies]
+aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.0.0" }
 ```
 
-### 2. Set Up Your Environment
+_(Note: Always lock to a specific `tag` to ensure upstream changes to `main` do not break your pipeline unexpectedly.)_
 
-You can install the dependencies in "editable" mode for local development (which reads `pyproject.toml`), or use the Streamlit-specific requirements file.
-
-**For Local/CLI Development:**
+### Installing with pip
 
 ```bash
-# Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
-
-# Install the package and dependencies
-pip install -e .
+pip install git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.0.0
 ```
 
-**For Streamlit Web UI:**
+### Python API Example
 
-```bash
-# Streamlit deployments rely on requirements.txt to bypass Poetry assumptions
-pip install -r requirements.txt
+```python
+from validate_aqdx import process_file
+
+# Run the validation engine on a local file or dataframe
+results = process_file("path/to/data.csv")
+
+if results["errors"]:
+    print(f"Found {sum(len(v) for v in results['errors'].values())} errors!")
+else:
+    # Extract the fully validated and auto-repaired Pandas DataFrame
+    clean_df = results["repaired_dataframe"]
+    print("Ready for ingestion!")
 ```
-
----
-
-## 💻 Usage: Web Interface (Streamlit)
-
-The easiest way to validate files is using the included Streamlit frontend. It provides a drag-and-drop interface, renders beautiful summary tables, and handles temporary file cleanup automatically.
-
-To launch the web app locally:
-
-```bash
-streamlit run streamlit_app.py
-```
-
-- The app will automatically open in your default browser.
-
-- If auto-repairs are available, a **Download Repaired CSV** button will appear in the UI.
 
 ---
 
@@ -78,8 +70,22 @@ streamlit run streamlit_app.py
 
 You can run the core validation engine directly from your terminal. The CLI provides a detailed tabular breakdown of errors, warnings, and available repairs.
 
+### Setup
+
+Clone the repository and install it locally in editable mode:
+
 ```bash
-python src/validate_aqdx.py path/to/your/data.csv
+git clone https://github.com/cdphe-atops/aqdx-v3-validator.git
+cd aqdx-v3-validator
+pip install -e .
+```
+
+### Running the CLI
+
+Installing the package makes the `validate-aqdx` command globally available in your environment:
+
+```bash
+validate-aqdx path/to/your/data.csv
 ```
 
 **Interactive Auto-Repair:**
@@ -88,3 +94,39 @@ If the engine detects fixable formatting issues, it will pause at the end of the
 Hitting `R` will instantly write the cleaned data to a new file in the same directory.
 
 ---
+
+## 💻 Usage: Web Interface (Streamlit)
+
+The easiest way for end-users to validate files is using the included Streamlit frontend. It provides a drag-and-drop interface, renders beautiful summary tables, and handles temporary file cleanup automatically.
+
+To launch the web app locally:
+
+```bash
+# Ensure dependencies are installed
+pip install -r requirements.txt
+
+# Run the app
+streamlit run streamlit_app.py
+```
+
+- The app will automatically open in your default browser.
+- If auto-repairs are available, a **Download Repaired CSV** button will appear in the UI.
+
+---
+
+## 🛠️ Local Development
+
+To contribute to the validator rules or engine:
+
+1. Clone the repository and set up a virtual environment.
+2. Install the package with development dependencies:
+
+   ```bash
+   pip install -e ".[dev]"
+   ```
+
+3. Run the test suite:
+
+   ```bash
+   pytest
+   ```
