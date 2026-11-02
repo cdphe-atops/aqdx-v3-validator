@@ -4,24 +4,29 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aqdx-v3-validator"
-version = "0.1.0"
-description = "Local validator for the AQDx Standard Format v3.0"
-readme = "README.md"
-requires-python = "~=3.14.0"
+version = "1.0.0"
+description = "Validator and auto-repair engine for the AQDx Standard Format v3.0"
+readme = "readme.md"
+requires-python = ">=3.11"
 dependencies = [
-    "pydantic~=2.12.0",
-    "pandas~=3.0.0",
-    "pyarrow~=23.0.0",
-    "openpyxl~=3.1.0",
-    "ipykernel>=7.0.0"
+    "pydantic>=2.12.0,<3",
+    "pandas>=3.0.0,<4",
+    "pyarrow>=24.0.0,<25",
+    "openpyxl>=3.1.0,<4",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest~=9.0.2"
+    "pytest>=8.0.0",
+    "ipykernel>=7.0.0"
 ]
 
+[project.scripts]
+validate-aqdx = "validate_aqdx:main"
+
+[tool.setuptools]
+py-modules = ["validate_aqdx"]
+package-dir = {"" = "src"}
+
 [tool.pytest.ini_options]
-pythonpath = [
-  "."
-]
+pythonpath = ["src"]
