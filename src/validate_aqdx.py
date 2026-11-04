@@ -19,6 +19,7 @@ from pydantic import (
 )
 
 DEFAULT_MAX_ERROR_THRESHOLD = 5000
+QA_QC_QUALIFIERS = frozenset({"AX", "AY", "CO"})
 
 
 class IssueTracker:
@@ -109,7 +110,9 @@ class AQDxRecord(BaseModel):
     detection_limit: Optional[Decimal] = Field(
         default=None, max_digits=12, decimal_places=5
     )
-    qualifier_codes: Optional[str] = Field(default=None, max_length=254)
+    qualifier_codes: Optional[str] = Field(
+        default=None, max_length=254, pattern=r"^[A-Z]{1,2}(?: [A-Z]{1,2})*$"
+    )
 
     # --- Pre-Process Auto-Repairs ---
 
@@ -282,12 +285,51 @@ class AQDxRecord(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_missing_values(self) -> "AQDxRecord":
-        if self.parameter_value is None:
-            if self.validity_code not in (0, 9):
-                raise ValueError(
-                    "If parameter_value is missing, validity_code must be 0 (Not Validated) or 9 (Invalid/Missing)."
+    def check_missing_values(self, info: ValidationInfo) -> "AQDxRecord":
+        # 1. Fast path: exit immediately if value is present
+        if self.parameter_value is not None:
+            return self
+
+        v_code = self.validity_code
+
+        # 2. Validity 0 (Not Validated) and 9 (Invalid/Missing) are ignored silently
+        if v_code in (0, 9):
+            return self
+
+        warn_ctx = info.context.get("warnings") if info.context else None
+        codes = set(self.qualifier_codes.split(" ")) if self.qualifier_codes else set()
+
+        # 3. Validity 1: requires 'ND'
+        if v_code == 1:
+            if "ND" not in codes and warn_ctx is not None:
+                warn_ctx.append(
+                    (
+                        "Missing Value Warning",
+                        "Missing parameter_value with validity_code 1 lacks 'ND' qualifier.",
+                    )
                 )
+            return self
+
+        # 4. Validity 8: requires at least one of AX, AY, CO
+        if v_code == 8:
+            if QA_QC_QUALIFIERS.isdisjoint(codes) and warn_ctx is not None:
+                warn_ctx.append(
+                    (
+                        "Missing Value Warning",
+                        "Missing parameter_value with validity_code 8 lacks an AX, AY, or CO qualifier.",
+                    )
+                )
+            return self
+
+        # 5. Any other unexpected validity_code with a missing parameter_value
+        if warn_ctx is not None:
+            warn_ctx.append(
+                (
+                    "Missing Value Warning",
+                    f"Missing parameter_value present under validity_code {v_code} without justifying qualifiers.",
+                )
+            )
+
         return self
 
 
@@ -331,7 +373,6 @@ def process_file(
     max_errors: Optional[int] = DEFAULT_MAX_ERROR_THRESHOLD,
 ) -> dict:
     """Core validation engine. Takes a file path or file-like object, runs Pydantic validation,
-
     and returns metadata summaries along with an in-memory DataFrame.
     """
     grouped_errors = defaultdict(IssueTracker)
