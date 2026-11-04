@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aqdx-v3-validator"
-version = "1.0.0"
+version = "1.0.1"
 description = "Validator and auto-repair engine for the AQDx Standard Format v3.0"
 readme = "readme.md"
 requires-python = ">=3.11"
