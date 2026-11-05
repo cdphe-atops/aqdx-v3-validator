@@ -21,6 +21,24 @@ from pydantic import (
 DEFAULT_MAX_ERROR_THRESHOLD = 5000
 QA_QC_QUALIFIERS = frozenset({"AX", "AY", "CO"})
 
+EXCLUDED_VALIDITY_CODES = frozenset({"0", "8", "9", "0.0", "8.0", "9.0"})
+NULL_VALIDITY_STRINGS = frozenset(
+    {"", "nan", "none", "<na>", "null", "n/a", "na", "-999", "-9999", "missing"}
+)
+
+
+def is_excluded_validity(raw_val: Any) -> bool:
+    """Returns True if validity_code is null/missing or in [0, 8, 9]."""
+    if raw_val is None or pd.isna(raw_val):
+        return True
+    val_str = str(raw_val).strip().lower()
+    if val_str in NULL_VALIDITY_STRINGS or val_str in EXCLUDED_VALIDITY_CODES:
+        return True
+    try:
+        return float(val_str) in (0.0, 8.0, 9.0)
+    except (ValueError, TypeError):
+        return False
+
 
 class IssueTracker:
     """Lightweight metadata tracker storing only issue count and first affected row.
@@ -223,8 +241,6 @@ class AQDxRecord(BaseModel):
     @field_validator("sample_datetime")
     @classmethod
     def check_datetime_format(cls, v: str) -> str:
-        import re
-
         # 1. Catch the missing timezone offset first to give a helpful error
         offset_pattern = r"[+-]\d{2}:\d{2}$"
         if not re.search(offset_pattern, v):
@@ -371,9 +387,15 @@ def iter_dataframe_rows(file_input: Any, chunksize: int = 50000):
 def process_file(
     file_input: Any,
     max_errors: Optional[int] = DEFAULT_MAX_ERROR_THRESHOLD,
+    exclude_uncurated_validity: bool = False,
 ) -> dict:
     """Core validation engine. Takes a file path or file-like object, runs Pydantic validation,
     and returns metadata summaries along with an in-memory DataFrame.
+
+    :param file_input: File path string, Path object, or file-like stream.
+    :param max_errors: Error count threshold before fast-failing.
+    :param exclude_uncurated_validity: When True, silently drops rows with validity_code
+        in [0, 8, 9] or null/missing before Pydantic validation.
     """
     grouped_errors = defaultdict(IssueTracker)
     grouped_warnings = defaultdict(IssueTracker)
@@ -381,6 +403,7 @@ def process_file(
     missing_headers_list = []
     total_rows = 0
     total_error_count = 0
+    excluded_count = 0
     aborted = False
     REQUIRED_HEADERS = set(AQDxRecord.model_fields.keys())
 
@@ -401,6 +424,13 @@ def process_file(
         for row in records_chunk:
             row_number = total_rows + 2
             total_rows += 1
+
+            # Skip uncurated validity codes before Pydantic runs
+            if exclude_uncurated_validity and is_excluded_validity(
+                row.get("validity_code")
+            ):
+                excluded_count += 1
+                continue
 
             row_warnings = []
             row_repairs = []
@@ -465,8 +495,16 @@ def process_file(
         else pd.DataFrame(columns=output_headers)
     )
 
+    exclusion_note = (
+        f"{excluded_count:,} rows skipped: validity_code in [0, 8, 9] or missing (uncurated data)"
+        if excluded_count > 0
+        else None
+    )
+
     return {
         "total_rows": total_rows,
+        "excluded_count": excluded_count,
+        "exclusion_note": exclusion_note,
         "errors": grouped_errors,
         "warnings": grouped_warnings,
         "repairs": grouped_repairs,
