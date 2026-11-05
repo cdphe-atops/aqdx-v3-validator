@@ -34,7 +34,7 @@ Currently, this package is distributed via GitHub tags rather than PyPI.
 ### Installing with pip
 
 ```bash
-pip install git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.0.1
+pip install git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.0.2
 ```
 
 _(Note: requres git binary installed on your system.)_
@@ -45,7 +45,7 @@ If you are using Pixi, add the package directly to your `pixi.toml` under PyPI d
 
 ```toml
 [pypi-dependencies]
-aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.0.1" }
+aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.0.2" }
 ```
 
 _(Note: Always lock to a specific `tag` to ensure upstream changes to `main` do not break your pipeline unexpectedly.)_
