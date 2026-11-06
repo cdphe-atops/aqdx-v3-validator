@@ -129,7 +129,7 @@ class AQDxRecord(BaseModel):
         default=None, max_digits=12, decimal_places=5
     )
     qualifier_codes: Optional[str] = Field(
-        default=None, max_length=254, pattern=r"^[A-Z]{1,2}(?: [A-Z]{1,2})*$"
+        default=None, max_length=254, pattern=r"^[A-Z0-9]{1,2}(?: [A-Z0-9]{1,2})*$"
     )
 
     # --- Pre-Process Auto-Repairs ---
