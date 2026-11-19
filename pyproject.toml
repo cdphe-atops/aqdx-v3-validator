@@ -16,16 +16,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+performance = [
+    "polars>=2.1.0,<3",
+]
 dev = [
     "pytest>=8.0.0",
-    "ipykernel>=7.0.0"
+    "ipykernel>=7.0.0",
+    "polars>=2.1.0,<3",
 ]
 
 [project.scripts]
 validate-aqdx = "validate_aqdx:main"
+validate-aqdx-performance = "validate_aqdx_performance:main"
 
 [tool.setuptools]
-py-modules = ["validate_aqdx"]
+py-modules = ["validate_aqdx", "validate_aqdx_performance"]
 package-dir = {"" = "src"}
 
 [tool.pytest.ini_options]
