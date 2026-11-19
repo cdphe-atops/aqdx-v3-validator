@@ -37,13 +37,13 @@ This package is distributed via GitHub release tags rather than PyPI.
 **Standard installation (Pydantic validator & auto-repair engine only):**
 
 ```bash
-pip install git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.1.0
+pip install git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.1.1
 ```
 
 **With the optional `performance` extra (includes `polars` for `validate_aqdx_performance`):**
 
 ```bash
-pip install "aqdx-v3-validator[performance] @ git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.1.0"
+pip install "aqdx-v3-validator[performance] @ git+https://github.com/cdphe-atops/aqdx-v3-validator.git@v1.1.1"
 
 ```
 
@@ -56,11 +56,11 @@ Add the package to your `pixi.toml` under `[pypi-dependencies]`, locked to a spe
 ```toml
 # Standard installation
 [pypi-dependencies]
-aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.1.0" }
+aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.1.1" }
 
 # Or with the optional performance extra (includes polars)
 [pypi-dependencies]
-aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.1.0", extras = ["performance"] }
+aqdx-v3-validator = { git = "https://github.com/cdphe-atops/aqdx-v3-validator.git", tag = "v1.1.1", extras = ["performance"] }
 
 ```
 
