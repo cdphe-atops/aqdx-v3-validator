@@ -1,8 +1,8 @@
-"""High-performance, pass/fail AQDx v3 validator built on Polars.
+"""High-performance AQDx v3 validator built on Polars.
 
 Designed for programmatic database ingestion pipelines and CLI batch checks on
-large `.csv` and `.csv.gz` datasets (up to 10M+ rows). Evaluates vectorized
-Polars expressions lazily and short-circuits on the first failing rule.
+large `.csv`, `.csv.gz`, and `.parquet` datasets (up to 10M+ rows). Evaluates
+vectorized Polars expressions lazily and short-circuits on the first failing rule.
 """
 
 from __future__ import annotations
@@ -23,6 +23,8 @@ __all__ = [
     "VALIDATION_RULES",
     "ValidationResult",
     "ValidationRule",
+    "uncurated_validity_expr",
+    "scan_validated_file",
     "validate_file",
     "main",
 ]
@@ -129,24 +131,33 @@ def _int_expr(
 def _decimal_expr(
     col_name: str, max_digits: int, decimal_places: int, *, nullable: bool
 ) -> pl.Expr:
+    max_int_digits = max_digits - decimal_places
+    if max_int_digits < 0:
+        raise ValueError(
+            f"max_digits ({max_digits}) must be >= decimal_places ({decimal_places})."
+        )
+
     c = pl.col(col_name)
-    pattern = rf"^[+-]?(?:[0-9]+(?:\.[0-9]{{1,{decimal_places}}})?|\.[0-9]{{1,{decimal_places}}})$"
-    normalized_digits = (
+    pattern = (
+        rf"^[+-]?(?:[0-9]+(?:\.[0-9]{{1,{decimal_places}}})?"
+        rf"|\.[0-9]{{1,{decimal_places}}})$"
+    )
+    integer_digits = (
         c.str.replace(r"^[+-]", "")
+        .str.replace(r"\..*$", "")
         .str.replace(r"^0+", "")
-        .str.replace(r"\.", "")
         .str.len_chars()
     )
     valid_decimal = c.str.contains(pattern).fill_null(False) & (
-        normalized_digits <= max_digits
+        integer_digits <= max_int_digits
     ).fill_null(False)
     if nullable:
         return c.is_null() | valid_decimal
     return c.is_not_null() & valid_decimal
 
 
-def _uncurated_validity_expr() -> pl.Expr:
-    """Matches `is_excluded_validity()` in `validate_aqdx.py` (null or in [0, 8, 9])."""
+def uncurated_validity_expr() -> pl.Expr:
+    """Boolean expression matching uncurated rows (null or validity_code in [0, 8, 9])."""
     vc = pl.col("validity_code")
     vc_norm = vc.str.strip_chars().str.to_lowercase()
     vc_float = vc_norm.cast(pl.Float64, strict=False)
@@ -180,7 +191,7 @@ VALIDATION_RULES: tuple[ValidationRule, ...] = (
     ValidationRule(
         name="parameter_value",
         columns=("parameter_value",),
-        description="Optional decimal with max_digits=12 and decimal_places=5.",
+        description="Optional decimal with precision=12 and scale=5 (max 7 integer digits, 5 decimal places).",
         expr=_decimal_expr(
             "parameter_value", max_digits=12, decimal_places=5, nullable=True
         ),
@@ -200,7 +211,7 @@ VALIDATION_RULES: tuple[ValidationRule, ...] = (
     ValidationRule(
         name="sample_duration",
         columns=("sample_duration",),
-        description="Required decimal with max_digits=12 and decimal_places=3.",
+        description="Required decimal with precision=12 and scale=3 (max 9 integer digits, 3 decimal places).",
         expr=_decimal_expr(
             "sample_duration", max_digits=12, decimal_places=3, nullable=False
         ),
@@ -208,26 +219,50 @@ VALIDATION_RULES: tuple[ValidationRule, ...] = (
     ValidationRule(
         name="aggregation_code",
         columns=("aggregation_code",),
-        description="Required integer.",
-        expr=_int_expr("aggregation_code"),
+        description="Required single-digit integer (-9 to 9).",
+        expr=_int_expr("aggregation_code", min_val=-9, max_val=9),
     ),
     # 2. Location
     ValidationRule(
         name="latitude",
         columns=("latitude",),
-        description="Optional decimal with max_digits=9 and decimal_places=5.",
+        description="Optional decimal with precision=9 and scale=5 (max 4 integer digits, 5 decimal places).",
         expr=_decimal_expr("latitude", max_digits=9, decimal_places=5, nullable=True),
     ),
     ValidationRule(
         name="longitude",
         columns=("longitude",),
-        description="Optional decimal with max_digits=9 and decimal_places=5.",
+        description="Optional decimal with precision=9 and scale=5 (max 4 integer digits, 5 decimal places).",
         expr=_decimal_expr("longitude", max_digits=9, decimal_places=5, nullable=True),
+    ),
+    ValidationRule(
+        name="latitude_range",
+        columns=("latitude",),
+        description="Latitude must be between -90 and 90 degrees inclusive.",
+        expr=(
+            pl.col("latitude").is_null()
+            | pl.col("latitude")
+            .cast(pl.Float64, strict=False)
+            .is_between(-90.0, 90.0)
+            .fill_null(False)
+        ),
+    ),
+    ValidationRule(
+        name="longitude_range",
+        columns=("longitude",),
+        description="Longitude must be between -180 and 180 degrees inclusive.",
+        expr=(
+            pl.col("longitude").is_null()
+            | pl.col("longitude")
+            .cast(pl.Float64, strict=False)
+            .is_between(-180.0, 180.0)
+            .fill_null(False)
+        ),
     ),
     ValidationRule(
         name="elevation",
         columns=("elevation",),
-        description="Optional decimal with max_digits=8 and decimal_places=2.",
+        description="Optional decimal with precision=8 and scale=2 (max 6 integer digits, 2 decimal places).",
         expr=_decimal_expr("elevation", max_digits=8, decimal_places=2, nullable=True),
     ),
     # 3. Device & Organization
@@ -269,25 +304,25 @@ VALIDATION_RULES: tuple[ValidationRule, ...] = (
     ValidationRule(
         name="validity_code",
         columns=("validity_code",),
-        description="Required integer.",
-        expr=_int_expr("validity_code"),
+        description="Required single-digit integer (-9 to 9).",
+        expr=_int_expr("validity_code", min_val=-9, max_val=9),
     ),
     ValidationRule(
         name="calibration_code",
         columns=("calibration_code",),
-        description="Required integer.",
-        expr=_int_expr("calibration_code"),
+        description="Required single-digit integer (-9 to 9).",
+        expr=_int_expr("calibration_code", min_val=-9, max_val=9),
     ),
     ValidationRule(
         name="review_level_code",
         columns=("review_level_code",),
-        description="Required integer.",
-        expr=_int_expr("review_level_code"),
+        description="Required single-digit integer (-9 to 9).",
+        expr=_int_expr("review_level_code", min_val=-9, max_val=9),
     ),
     ValidationRule(
         name="detection_limit",
         columns=("detection_limit",),
-        description="Optional decimal with max_digits=12 and decimal_places=5.",
+        description="Optional decimal with precision=12 and scale=5 (max 7 integer digits, 5 decimal places).",
         expr=_decimal_expr(
             "detection_limit", max_digits=12, decimal_places=5, nullable=True
         ),
@@ -332,19 +367,130 @@ VALIDATION_RULES: tuple[ValidationRule, ...] = (
 )
 
 
-# --- Public Validation API ---
+# --- Internal Scanning & Normalization ---
 
 
 def _validate_supported_path(file_path: Union[str, Path]) -> Path:
     path = Path(file_path)
     name_lower = path.name.lower()
-    if not (name_lower.endswith(".csv") or name_lower.endswith(".csv.gz")):
+    if not (
+        name_lower.endswith(".csv")
+        or name_lower.endswith(".csv.gz")
+        or name_lower.endswith(".parquet")
+    ):
         raise ValueError(
-            f"Unsupported file format '{path.name}'. Only .csv and .csv.gz files are supported."
+            f"Unsupported file format '{path.name}'. Only .csv, .csv.gz, and .parquet files are supported."
         )
     if not path.is_file():
         raise FileNotFoundError(f"File not found: {path}")
     return path
+
+
+def _normalize_lazyframe(lf: pl.LazyFrame, schema: pl.Schema) -> pl.LazyFrame:
+    """Normalizes columns to trimmed `pl.String` (empty -> null) for rule parity."""
+    normalized_exprs: list[pl.Expr] = []
+
+    for col_name, dtype in schema.items():
+        if col_name == "sample_datetime" and isinstance(dtype, pl.Datetime):
+            if dtype.time_zone is not None:
+                s = pl.col(col_name).dt.strftime("%Y-%m-%dT%H:%M:%S%.3f%:z")
+            else:
+                # Naive timestamps lack the mandatory timezone offset and will fail validation
+                s = pl.col(col_name).dt.strftime("%Y-%m-%dT%H:%M:%S")
+        else:
+            s = pl.col(col_name).cast(pl.String).str.strip_chars()
+
+        normalized_exprs.append(
+            pl.when(s == "").then(None).otherwise(s).alias(col_name)
+        )
+
+    return lf.with_columns(normalized_exprs)
+
+
+# --- Public Validation API ---
+
+
+def scan_validated_file(
+    file_path: Union[str, Path],
+    *,
+    exclude_uncurated_validity: bool = False,
+) -> tuple[ValidationResult, pl.LazyFrame | None]:
+    """Strictly validate a `.csv`, `.csv.gz`, or `.parquet` file against AQDx v3.
+
+    Evaluates rules lazily via Polars and short-circuits on the first failure.
+
+    :param file_path: Path to a `.csv`, `.csv.gz`, or `.parquet` file.
+    :param exclude_uncurated_validity: When True, ignores rows where `validity_code`
+        is null/missing or in [0, 8, 9].
+    :return: `(ValidationResult, filtered_lazyframe)` when validation succeeds, or
+        `(ValidationResult, None)` when validation fails.
+    """
+    path = _validate_supported_path(file_path)
+
+    if path.name.lower().endswith(".parquet"):
+        lf = pl.scan_parquet(path)
+    else:
+        lf = pl.scan_csv(
+            path,
+            infer_schema=False,
+            null_values=[""],
+            try_parse_dates=False,
+        )
+
+    try:
+        schema = lf.collect_schema()
+    except pl.exceptions.PolarsError as exc:
+        return (
+            ValidationResult(
+                passed=False,
+                failed_rule="parse_error",
+                reason=f"Failed to read file schema: {exc}",
+            ),
+            None,
+        )
+
+    file_headers = set(schema.names())
+    missing = tuple(h for h in REQUIRED_HEADERS if h not in file_headers)
+    if missing:
+        return (
+            ValidationResult(
+                passed=False,
+                failed_rule="missing_headers",
+                reason=f"Missing required column(s): {', '.join(missing)}",
+                missing_headers=missing,
+            ),
+            None,
+        )
+
+    lf = _normalize_lazyframe(lf, schema)
+
+    if exclude_uncurated_validity:
+        lf = lf.filter(uncurated_validity_expr().not_())
+
+    for rule in VALIDATION_RULES:
+        try:
+            violated = lf.filter(rule.violation_expr()).limit(1).collect().height > 0
+        except pl.exceptions.PolarsError as exc:
+            return (
+                ValidationResult(
+                    passed=False,
+                    failed_rule="parse_error",
+                    reason=f"Parsing failed during rule '{rule.name}': {exc}",
+                ),
+                None,
+            )
+
+        if violated:
+            return (
+                ValidationResult(
+                    passed=False,
+                    failed_rule=rule.name,
+                    reason=rule.description,
+                ),
+                None,
+            )
+
+    return ValidationResult(passed=True), lf
 
 
 def validate_file(
@@ -352,63 +498,20 @@ def validate_file(
     *,
     exclude_uncurated_validity: bool = False,
 ) -> ValidationResult:
-    """Strictly validate a `.csv` or `.csv.gz` file against the AQDx v3 schema.
+    """Strictly validate a `.csv`, `.csv.gz`, or `.parquet` file against AQDx v3.
 
     Evaluates rules lazily via Polars and short-circuits on the first failure.
 
-    :param file_path: Path to a `.csv` or `.csv.gz` file.
+    :param file_path: Path to a `.csv`, `.csv.gz`, or `.parquet` file.
     :param exclude_uncurated_validity: When True, ignores rows where `validity_code`
         is null/missing or in [0, 8, 9].
     :return: `ValidationResult` (truthy on pass, falsy on fail).
     """
-    path = _validate_supported_path(file_path)
-
-    lf = pl.scan_csv(
-        path,
-        infer_schema=False,
-        null_values=[""],
-        try_parse_dates=False,
+    result, _ = scan_validated_file(
+        file_path,
+        exclude_uncurated_validity=exclude_uncurated_validity,
     )
-
-    try:
-        file_headers = set(lf.collect_schema().names())
-    except pl.exceptions.PolarsError as exc:
-        return ValidationResult(
-            passed=False,
-            failed_rule="csv_parse_error",
-            reason=f"Failed to read CSV schema: {exc}",
-        )
-
-    missing = tuple(h for h in REQUIRED_HEADERS if h not in file_headers)
-    if missing:
-        return ValidationResult(
-            passed=False,
-            failed_rule="missing_headers",
-            reason=f"Missing required column(s): {', '.join(missing)}",
-            missing_headers=missing,
-        )
-
-    if exclude_uncurated_validity:
-        lf = lf.filter(_uncurated_validity_expr().not_())
-
-    for rule in VALIDATION_RULES:
-        try:
-            violated = lf.filter(rule.violation_expr()).limit(1).collect().height > 0
-        except pl.exceptions.PolarsError as exc:
-            return ValidationResult(
-                passed=False,
-                failed_rule="csv_parse_error",
-                reason=f"CSV parsing failed during rule '{rule.name}': {exc}",
-            )
-
-        if violated:
-            return ValidationResult(
-                passed=False,
-                failed_rule=rule.name,
-                reason=rule.description,
-            )
-
-    return ValidationResult(passed=True)
+    return result
 
 
 # --- CLI Entrypoint ---
@@ -416,11 +519,11 @@ def validate_file(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="High-performance AQDx v3 pass/fail validator (.csv and .csv.gz)."
+        description="High-performance AQDx v3 pass/fail validator (.csv, .csv.gz, and .parquet)."
     )
     parser.add_argument(
         "file_path",
-        help="Path to the .csv or .csv.gz file to validate.",
+        help="Path to the .csv, .csv.gz, or .parquet file to validate.",
     )
     parser.add_argument(
         "--exclude-uncurated",

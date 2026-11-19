@@ -22,7 +22,7 @@ EXPECTED_STRICT_RESULTS = [
     ("valid_example.csv", True, None),
     ("valid_column_swap.csv", True, None),
     # Soft warnings are omitted in strict pass/fail mode
-    ("warn_latlon_swap.csv", True, None),
+    ("warn_latlon_swap.csv", False, "latitude_range"),  # fails range checks
     ("error_missing_parameter_value_without_validity_code.csv", True, None),
     # Previously auto-repaired formatting issues now fail fast
     ("error_precision.csv", False, "parameter_value"),
@@ -64,12 +64,30 @@ def test_missing_headers():
 
 
 def test_unsupported_extension_raises():
-    """Verifies non-.csv/.csv.gz inputs (such as .xlsx) raise ValueError."""
+    """Verifies unsupported inputs (such as .xlsx) raise ValueError."""
     xlsx_path = TEST_DIR / "valid_opened_in_excel.xlsx"
     assert xlsx_path.exists(), f"Test file missing: {xlsx_path}"
 
-    with pytest.raises(ValueError, match="Only .csv and .csv.gz files are supported"):
+    with pytest.raises(
+        ValueError, match="Only .csv, .csv.gz, and .parquet files are supported"
+    ):
         validate_file(xlsx_path)
+
+
+def test_parquet_support(tmp_path):
+    """Verifies .parquet files pass validation and scan_validated_file returns a LazyFrame."""
+    import polars as pl
+
+    from validate_aqdx_performance import scan_validated_file
+
+    csv_path = TEST_DIR / "valid_example.csv"
+    parquet_path = tmp_path / "valid_example.parquet"
+    pl.read_csv(csv_path, infer_schema=False).write_parquet(parquet_path)
+
+    result, lf = scan_validated_file(parquet_path)
+    assert bool(result) is True
+    assert lf is not None
+    assert lf.collect().height > 0
 
 
 def test_gzip_csv_support(tmp_path):

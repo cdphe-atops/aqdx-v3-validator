@@ -22,7 +22,7 @@ performance = [
 dev = [
     "pytest>=8.0.0",
     "ipykernel>=7.0.0",
-    "polars>=2.1.0,<3",
+    "polars>=2.0.0,<3",
 ]
 
 [project.scripts]
