@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from validate_aqdx import iter_dataframe_rows, process_file
 
@@ -102,3 +103,97 @@ def test_multi_chunk_row_numbering(tmp_path):
         v for k, v in results["errors"].items() if k[0] == "instrument_classification"
     )
     assert err_tracker.first_row == 18
+
+
+@pytest.mark.parametrize(
+    "filename", ["valid_example.csv", "valid_example.csv.gz", "valid_example.parquet"]
+)
+def test_supported_formats_clean_pass(filename):
+    results = process_file(TEST_DIR / filename)
+    assert not results["errors"]
+    assert not results["warnings"]
+    assert not results["repairs"]
+    assert not results["missing_headers"]
+    assert results["total_rows"] == 100
+
+
+def test_warnings_and_geo_rules():
+    warn_geo = process_file(TEST_DIR / "warn_geo_us_bounds.csv")
+    assert not warn_geo["errors"]
+    assert (
+        "lat lon swap",
+        "Coordinates are outside expected US bounds. POSSIBLE SWAP DETECTED.",
+    ) in warn_geo["warnings"]
+    assert ("out of bounds", "Coordinates are outside expected US bounds.") in warn_geo[
+        "warnings"
+    ]
+
+    warn_missing = process_file(TEST_DIR / "warn_missing_values_unjustified.csv")
+    assert not warn_missing["errors"]
+    assert sum(len(v) for v in warn_missing["warnings"].values()) == 2
+
+    err_geo = process_file(TEST_DIR / "error_missing_geo_without_ig.csv")
+    assert len(err_geo["errors"]) == 1
+
+
+def test_missing_headers_and_schema_padding(tmp_path):
+    df = pd.read_csv(
+        TEST_DIR / "valid_example.csv", dtype=str, keep_default_na=False
+    ).head(5)
+    df = df.drop(columns=["elevation", "qualifier_codes"])
+    bad_schema = tmp_path / "missing_cols.csv"
+    df.to_csv(bad_schema, index=False)
+
+    results = process_file(bad_schema)
+    assert set(results["missing_headers"]) == {"elevation", "qualifier_codes"}
+    assert {"elevation", "qualifier_codes"}.issubset(
+        results["repaired_dataframe"].columns
+    )
+
+
+def test_xlsx_and_native_null_parquet(tmp_path):
+    base_df = pd.read_csv(
+        TEST_DIR / "valid_example.csv", dtype=str, keep_default_na=False
+    ).head(10)
+
+    # 1. Excel (.xlsx) support
+    xlsx_path = tmp_path / "sample.xlsx"
+    base_df.to_excel(xlsx_path, index=False)
+    res_xlsx = process_file(xlsx_path)
+    assert not res_xlsx["errors"]
+    assert res_xlsx["total_rows"] == 10
+
+    # 2. Parquet with native None/NaN values in optional columns
+    pq_df = base_df.copy()
+    pq_df.loc[0, ["elevation", "qualifier_codes"]] = [None, float("nan")]
+    pq_path = tmp_path / "native_nulls.parquet"
+    pq_df.to_parquet(pq_path, index=False)
+    res_pq = process_file(pq_path)
+    assert not res_pq["errors"]
+    assert pd.isna(res_pq["repaired_dataframe"].loc[0, "elevation"])
+    assert pd.isna(res_pq["repaired_dataframe"].loc[0, "qualifier_codes"])
+
+
+def test_datetime_repairs_and_rounding_boundaries(tmp_path):
+    df = pd.read_csv(
+        TEST_DIR / "valid_example.csv", dtype=str, keep_default_na=False
+    ).head(5)
+    df.loc[0, "sample_datetime"] = "2024-06-05 08:40:30-06:00"  # space -> T
+    df.loc[1, "sample_datetime"] = "2024-06-05T08:40:33Z"  # Z -> +00:00
+    df.loc[2, "sample_datetime"] = "2024-06-05T08:40:34.123-06:00"  # 3ms valid
+    df.loc[3, "parameter_value"] = "12.12345678"  # rounds to 12.12346
+    df.loc[4, "parameter_value"] = "9999999.999999"  # rounds to 8 int digits -> fails
+
+    path = tmp_path / "repairs_and_overflow.csv"
+    df.to_csv(path, index=False)
+    results = process_file(path)
+
+    assert len(results["errors"]) == 1
+    assert ("parameter_value", "Rounded decimal to max scale (5)") in results["repairs"]
+    assert (
+        results["repairs"][
+            ("parameter_value", "Rounded decimal to max scale (5)")
+        ].count
+        == 1
+    )
+    assert results["repaired_dataframe"].loc[3, "parameter_value"] == "12.12346"

@@ -114,3 +114,72 @@ def test_cross_engine_parity(file_path):
             f"Engine mismatch on {file_path.name}: Polars passed, "
             f"but Pydantic found missing headers: {missing_headers}"
         )
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "valid_example.csv",
+        "valid_example.csv.gz",
+        "valid_example.parquet",
+        "valid_missing_geo_with_ig.csv",
+        "valid_missing_values_qualified.csv",
+    ],
+)
+def test_valid_fixtures_pass_strictly(filename):
+    res, lf = scan_validated_file(TEST_DIR / filename)
+    assert res.passed is True
+    assert lf is not None
+    assert lf.select(pl.len()).collect().item() == 100
+
+
+def test_null_island_and_equator_meridian(tmp_path):
+    df = pl.read_csv(TEST_DIR / "valid_example.csv", infer_schema=False).head(3)
+    # Row 0: Equator (valid), Row 1: Prime Meridian (valid)
+    df_ok = df.with_columns(
+        pl.Series("latitude", ["0.0", "39.784", "39.784"]),
+        pl.Series("longitude", ["-105.11", "0.0", "-105.11"]),
+    )
+    ok_path = tmp_path / "equator_meridian.csv"
+    df_ok.write_csv(ok_path)
+    assert validate_file(ok_path).passed is True
+
+    # Row 0: Null Island (0.0, 0.0) -> must fail
+    df_ni = df.with_columns(
+        pl.Series("latitude", ["0.0", "39.784", "39.784"]),
+        pl.Series("longitude", ["0.0", "-105.11", "-105.11"]),
+    )
+    ni_path = tmp_path / "null_island.csv"
+    df_ni.write_csv(ni_path)
+    res_ni = validate_file(ni_path)
+    assert not res_ni
+    assert res_ni.failed_rule == "geo_null_island"
+
+
+def test_scan_lazyframe_filtering_and_cli_errors(tmp_path, capsys):
+    # Verify scan_validated_file actually filters uncurated rows out of the returned LazyFrame
+    res, lf = scan_validated_file(
+        TEST_DIR / "error_uncurated_dirty_rows.csv",
+        exclude_uncurated_validity=True,
+    )
+    assert res.passed is True
+    assert lf is not None
+    assert lf.select(pl.len()).collect().item() == 96
+
+    # Missing headers in Polars
+    df_missing = pl.read_csv(TEST_DIR / "valid_example.csv", infer_schema=False).drop(
+        "dataset_id"
+    )
+    missing_path = tmp_path / "missing_col.csv"
+    df_missing.write_csv(missing_path)
+    res_missing = validate_file(missing_path)
+    assert not res_missing
+    assert res_missing.failed_rule == "missing_headers"
+    assert res_missing.missing_headers == ("dataset_id",)
+
+    # CLI exit code 2 for unsupported format and missing file
+    assert main([str(tmp_path / "does_not_exist.csv")]) == 2
+    bad_ext = tmp_path / "bad.txt"
+    bad_ext.write_text("hello")
+    assert main([str(bad_ext)]) == 2
+    capsys.readouterr()
