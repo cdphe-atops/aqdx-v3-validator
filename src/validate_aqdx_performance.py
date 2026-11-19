@@ -414,6 +414,7 @@ def scan_validated_file(
     file_path: Union[str, Path],
     *,
     exclude_uncurated_validity: bool = False,
+    allow_null_dataset_id: bool = False,
 ) -> tuple[ValidationResult, pl.LazyFrame | None]:
     """Strictly validate a `.csv`, `.csv.gz`, or `.parquet` file against AQDx v3.
 
@@ -422,6 +423,8 @@ def scan_validated_file(
     :param file_path: Path to a `.csv`, `.csv.gz`, or `.parquet` file.
     :param exclude_uncurated_validity: When True, ignores rows where `validity_code`
         is null/missing or in [0, 8, 9].
+    :param allow_null_dataset_id: When True, allows blank or null values in the
+        `dataset_id` column (the column header itself remains required).
     :return: `(ValidationResult, filtered_lazyframe)` when validation succeeds, or
         `(ValidationResult, None)` when validation fails.
     """
@@ -468,6 +471,14 @@ def scan_validated_file(
         lf = lf.filter(uncurated_validity_expr().not_())
 
     for rule in VALIDATION_RULES:
+        if allow_null_dataset_id and rule.name == "dataset_id":
+            rule = ValidationRule(
+                name="dataset_id",
+                columns=("dataset_id",),
+                description="Optional string matching ^[\\w.-]+$ (max 128 chars).",
+                expr=_optional_regex_expr("dataset_id", r"^[\w.-]+$", max_length=128),
+            )
+
         try:
             violated = lf.filter(rule.violation_expr()).limit(1).collect().height > 0
         except pl.exceptions.PolarsError as exc:
@@ -497,6 +508,7 @@ def validate_file(
     file_path: Union[str, Path],
     *,
     exclude_uncurated_validity: bool = False,
+    allow_null_dataset_id: bool = False,
 ) -> ValidationResult:
     """Strictly validate a `.csv`, `.csv.gz`, or `.parquet` file against AQDx v3.
 
@@ -505,11 +517,14 @@ def validate_file(
     :param file_path: Path to a `.csv`, `.csv.gz`, or `.parquet` file.
     :param exclude_uncurated_validity: When True, ignores rows where `validity_code`
         is null/missing or in [0, 8, 9].
+    :param allow_null_dataset_id: When True, allows blank or null values in the
+        `dataset_id` column (the column header itself remains required).
     :return: `ValidationResult` (truthy on pass, falsy on fail).
     """
     result, _ = scan_validated_file(
         file_path,
         exclude_uncurated_validity=exclude_uncurated_validity,
+        allow_null_dataset_id=allow_null_dataset_id,
     )
     return result
 
@@ -530,12 +545,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Ignore rows with validity_code in [0, 8, 9] or missing.",
     )
+    parser.add_argument(
+        "--allow-null-dataset-id",
+        action="store_true",
+        help="Allow blank or null values in the dataset_id column.",
+    )
     args = parser.parse_args(argv)
 
     try:
         result = validate_file(
             args.file_path,
             exclude_uncurated_validity=args.exclude_uncurated,
+            allow_null_dataset_id=args.allow_null_dataset_id,
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

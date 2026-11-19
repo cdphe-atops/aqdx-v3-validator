@@ -123,7 +123,9 @@ class AQDxRecord(BaseModel):
         pattern=r"^[A-Z]{2}[a-z]{0,2}-(?:[A-Z]{2}[a-z]{0,2}|00)-[A-Z]{2}[a-z]{0,2}$",
     )
     instrument_classification: int = Field(..., ge=1, le=3)
-    dataset_id: str = Field(..., max_length=128, pattern=r"^[\w.-]+$")
+    dataset_id: Optional[str] = Field(
+        default=None, max_length=128, pattern=r"^[\w.-]+$"
+    )
 
     # 4. Quality Control
     validity_code: int = Field(...)
@@ -260,6 +262,18 @@ class AQDxRecord(BaseModel):
         return v
 
     # --- Cross-Field Validations ---
+
+    @model_validator(mode="after")
+    def check_dataset_id(self, info: ValidationInfo) -> "AQDxRecord":
+        if self.dataset_id is None:
+            if info.context is not None and "warnings" in info.context:
+                info.context["warnings"].append(
+                    (
+                        "Missing dataset_id",
+                        "Empty dataset_id may be used in automated data pipelines where dataset_id is deterministically generated.",
+                    )
+                )
+        return self
 
     @model_validator(mode="after")
     def check_geo_logic(self, info: ValidationInfo) -> "AQDxRecord":
