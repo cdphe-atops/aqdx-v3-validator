@@ -21,7 +21,6 @@ performance = [
 ]
 dev = [
     "pytest>=8.0.0",
-    "ipykernel>=7.0.0",
     "polars>=2.0.0,<3",
 ]
 
@@ -35,3 +34,5 @@ package-dir = {"" = "src"}
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

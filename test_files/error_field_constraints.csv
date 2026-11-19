@@ -1,8 +1,8 @@
 sample_datetime,parameter_code,parameter_value,unit_code,method_code,sample_duration,aggregation_code,latitude,longitude,elevation,data_steward_name,device_id,measurement_technology_code,instrument_classification,dataset_id,validity_code,calibration_code,review_level_code,detection_limit,qualifier_codes
-2024-06-05T08:40:30-06:00,45202,12.86362,142,805,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
-2024-06-05T08:40:33-06:00,61102,90.76825,139,200,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
-2024-06-05T08:40:34-06:00,42601,32.27931,047,442,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
-2024-06-05T08:40:35-06:00,42401,25.50011,068,241,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
+2024-06-05T08:40:30-06:00,45202,12.86362,142,805,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,bad-tech-code,2,CAT_testdata,1,0,1,0.5,
+2024-06-05T08:40:33-06:00,61102,90.76825,139,200,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,"ND,AX"
+2024-06-05T08:40:34-06:00,42601,32.27931,047,442,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,4,CAT_testdata,1,0,1,0.5,
+2024-06-05T08:40:35-06:00,42401,12345678.123456,068,241,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:40:36-06:00,42601,40.18541,007,184,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:40:37-06:00,45202,3.35262,040,835,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:40:38-06:00,45102,88.60763,097,682,1,0,39.784,-105.11,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
@@ -49,7 +49,7 @@ sample_datetime,parameter_code,parameter_value,unit_code,method_code,sample_dura
 2024-06-05T08:41:19-06:00,42603,85.80904,177,368,1,0,39.785,-105.112,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:41:20-06:00,88101,39.0662,110,372,1,0,39.785,-105.112,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:41:21-06:00,44201,42.982,152,137,1,0,39.784,-105.112,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
-2024-06-05T08:41:22-06:00,62201,88.8277,165,167,1,0,0,0,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
+2024-06-05T08:41:22-06:00,62201,88.8277,165,167,1,0,39.784,-105.112,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:41:23-06:00,61102,55.20013,056,253,1,0,39.784,-105.113,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:41:24-06:00,45202,69.60846,066,253,1,0,39.784,-105.113,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
 2024-06-05T08:41:25-06:00,81102,11.21993,171,352,1,0,39.784,-105.113,,cdphe_apcd_atops,CAT,XXxx-XXxx-XXxx,2,CAT_testdata,1,0,1,0.5,
