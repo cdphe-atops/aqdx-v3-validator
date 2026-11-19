@@ -11,7 +11,7 @@ EXPECTED_RESULTS = [
     ("valid_example.csv", 0, 0, 0),
     ("valid_opened_in_excel.xlsx", 0, 0, 55),
     ("valid_column_swap.csv", 0, 0, 0),
-    ("warn_latlon_swap.csv", 0, 100, 0),
+    ("warn_latlon_swap.csv", 100, 0, 0),  # fails range checks
     ("error_precision.csv", 0, 0, 100),
     ("error_leading_zeros.csv", 0, 0, 55),
     ("error_null_island.csv", 1, 0, 0),

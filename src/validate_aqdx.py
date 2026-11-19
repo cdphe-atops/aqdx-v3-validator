@@ -106,8 +106,12 @@ class AQDxRecord(BaseModel):
     aggregation_code: int = Field(...)
 
     # 2. Location
-    latitude: Optional[Decimal] = Field(default=None, max_digits=9, decimal_places=5)
-    longitude: Optional[Decimal] = Field(default=None, max_digits=9, decimal_places=5)
+    latitude: Optional[Decimal] = Field(
+        default=None, max_digits=9, decimal_places=5, ge=-90, le=90
+    )
+    longitude: Optional[Decimal] = Field(
+        default=None, max_digits=9, decimal_places=5, ge=-180, le=180
+    )
     elevation: Optional[Decimal] = Field(default=None, max_digits=8, decimal_places=2)
 
     # 3. Device & Organization
